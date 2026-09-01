@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- Added an offline AI Pet MVP for the Passport: seven original growth stages,
+  button-driven feeding and monthly settlement, a 12-month family archive,
+  sleep-without-decay behavior, battery status, and CRC-protected dual-slot NVS
+  persistence. Added host tests for thresholds, idempotency, settlement, month
+  transitions, corrupted state, and counter saturation.
 - Made mini-program BLE install compatibility a template-level invariant: fixed
   protected `cardid`/Recovery partitions, retained the five-second UP-key
   Recovery boot hook, and added CI validation for merged-image structure,

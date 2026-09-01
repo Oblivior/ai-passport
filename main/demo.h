@@ -12,6 +12,9 @@ typedef struct {
 } demo_entry_t;
 
 // 各演示页(定义在各自的 .c 里)
+void demo_pet_enter(void);      void demo_pet_exit(void);
+void demo_pet_key(bsp_btn_t btn, bsp_btn_ev_t ev);
+
 void demo_display_enter(void); void demo_display_exit(void);
 void demo_display_key(bsp_btn_t btn, bsp_btn_ev_t ev);
 
