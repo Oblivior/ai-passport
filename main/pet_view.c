@@ -102,3 +102,48 @@ void pet_view_bounce(lv_obj_t *pet)
     lv_anim_set_path_cb(&anim, lv_anim_path_step);
     lv_anim_start(&anim);
 }
+
+lv_obj_t *pet_view_create_pose(lv_obj_t *parent, pet_stage_t stage, int x, int y, pet_pose_t pose)
+{
+    lv_obj_t *pet = pet_view_create(parent, stage, x, y);
+    uint32_t body = stage >= PET_STAGE_RANGER ? 0x7557D9 : UI_ORANGE;
+    if (pose == PET_POSE_SLEEP && stage != PET_STAGE_EGG) {
+        pixel(pet, 39, 27, 9, 9, body);
+        pixel(pet, 53, 27, 9, 9, body);
+        pixel(pet, 39, 31, 9, 2, UI_INK);
+        pixel(pet, 53, 31, 9, 2, UI_INK);
+    }
+    if (pose == PET_POSE_SLEEP) {
+        lv_obj_t *z = lv_label_create(pet);
+        lv_label_set_text(z, "z Z");
+        lv_obj_set_style_text_font(z, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(z, lv_color_hex(UI_SKY_DARK), 0);
+        lv_obj_set_pos(z, 71, 0);
+    } else if (pose == PET_POSE_EAT) {
+        pixel(pet, 42, 42, 16, 8, UI_INK);
+        pixel(pet, 45, 45, 10, 3, UI_RED);
+        pixel(pet, 35, 79, 30, 8, UI_ORANGE);
+        pixel(pet, 40, 86, 20, 4, UI_INK);
+        pixel(pet, 40, 76, 20, 4, UI_YELLOW);
+    } else if (pose == PET_POSE_HAPPY) {
+        pixel(pet, 78, 27, 5, 5, UI_RED);
+        pixel(pet, 87, 27, 5, 5, UI_RED);
+        pixel(pet, 78, 32, 14, 5, UI_RED);
+        pixel(pet, 82, 37, 6, 4, UI_RED);
+    }
+    return pet;
+}
+
+void pet_view_frame(lv_obj_t *pet, pet_pose_t pose, unsigned frame)
+{
+    if (!pet) return;
+    int offset = 0;
+    if (pose == PET_POSE_HAPPY) offset = frame % 2 ? -8 : 0;
+    else if (pose == PET_POSE_EAT) offset = frame % 2 ? -3 : 0;
+    else if (pose == PET_POSE_IDLE) offset = frame % 6 < 3 ? -1 : 0;
+    lv_obj_set_style_translate_y(pet, offset, 0);
+    lv_obj_set_style_translate_x(pet, pose == PET_POSE_EVOLVE ? (frame % 2 ? 2 : -2) : 0, 0);
+    /* Blink without a translucent off-screen layer on this no-PSRAM board. */
+    if (pose == PET_POSE_EVOLVE && frame % 2) lv_obj_add_flag(pet, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(pet, LV_OBJ_FLAG_HIDDEN);
+}

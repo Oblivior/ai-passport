@@ -15,6 +15,7 @@
 #include "lvgl.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "pet_service.h"
 
 static const char *TAG = "main";
 
@@ -125,7 +126,7 @@ void app_main(void) {
     bsp_display_backlight(100);
 
     // 其余外设单项失败不阻塞:菜单里标 [FAIL],其他项照常可测。
-    s_ok[0] = true;                                    // AI Pet 仅依赖已就绪的显示
+    s_ok[0] = pet_service_start();
     s_ok[1] = true;                                    // Display 已确认可用
     s_ok[2] = (bsp_button_init(on_key, NULL) == ESP_OK);
     s_ok[3] = (bsp_audio_init() == ESP_OK);

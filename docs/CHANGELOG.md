@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- Replaced unlimited test feeding with a Kaboo-local USB lunchbox, food and
+  active-day evolution gates, animated moods, next-stage requirements and
+  browsable family records. Added cumulative sync, local calendar rollover and
+  non-destructive legacy-save import. Bits and BLE integration remain pending.
+
 - Fixed feeding animations reading unresolved LVGL coordinates and moving the
   pet over its title. Jumps now use a relative offset and cannot accumulate
   position drift when interrupted. Added real LVGL 9.5.0 regression coverage.
