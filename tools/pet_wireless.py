@@ -162,6 +162,8 @@ def main():
     parser.add_argument("--interval", type=int, default=300)
     parser.add_argument("--csv")
     parser.add_argument("--kaboo-cli", default="kaboo-cli")
+    parser.add_argument("--cached-export", action="store_true",
+                        help="use an exporter supporting isolated cached cumulative snapshots")
     parser.add_argument("--goal", type=int)
     args = parser.parse_args()
     if args.interval < 60:

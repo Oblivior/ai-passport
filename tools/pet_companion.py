@@ -83,11 +83,18 @@ def load_source(args):
         return aggregate_csv(Path(args.csv).read_text(encoding="utf-8-sig"))
     env = os.environ.copy()
     env["KABOO_SKIP_AUTO_UPDATE"] = "1"
-    # Export full scans may update the scan cache. Isolate it from the reporter.
-    with tempfile.TemporaryDirectory(prefix="passport-kaboo-") as directory:
-        env["KABOO_SCAN_CACHE_PATH"] = str(Path(directory) / "scan-cache.db")
-        result = subprocess.run([args.kaboo_cli, "export", "--format", "csv"],
-                                capture_output=True, text=True, timeout=120, env=env)
+    command = [args.kaboo_cli, "export", "--format", "csv"]
+    if getattr(args, "cached_export", False):
+        # Opt in only for an exporter supporting this contract: persistent,
+        # isolated cache, cumulative output (NOT token deltas), no uploads.
+        result = subprocess.run(command + ["--cached"], capture_output=True,
+                                text=True, timeout=120, env=env)
+    else:
+        # Legacy full exports may update the reporter cache; isolate them.
+        with tempfile.TemporaryDirectory(prefix="passport-kaboo-") as directory:
+            env["KABOO_SCAN_CACHE_PATH"] = str(Path(directory) / "scan-cache.db")
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=120, env=env)
     if result.returncode:
         raise ValueError("Kaboo export failed; existing pet state retained")
     return aggregate_csv(result.stdout)
@@ -161,6 +168,8 @@ def main():
     parser.add_argument("--port", help="explicit Passport serial port (no automatic device selection)")
     parser.add_argument("--csv", help="explicit Kaboo CSV export; default runs local kaboo-cli export")
     parser.add_argument("--kaboo-cli", default="kaboo-cli")
+    parser.add_argument("--cached-export", action="store_true",
+                        help="use an exporter supporting isolated cached cumulative snapshots")
     parser.add_argument("--goal", type=int, help="monthly daily target; otherwise median of 14 active days")
     parser.add_argument("--preview", action="store_true", help="print aggregates only; do not connect to device")
     parser.add_argument("--watch", action="store_true", help="keep syncing in this process, Ctrl-C to stop")

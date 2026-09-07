@@ -69,6 +69,16 @@ Default: one sync. `--watch`: every 300 seconds while the process runs, not an
 auto-start service. Stop it before flashing. `--csv path/to/export.csv` reads an
 explicit export instead. Never commit real exports.
 
+With an exporter supporting `export --cached`, add `--cached-export` to either
+companion and select that executable with `--kaboo-cli /path/to/cli`.
+Its dedicated persistent cache reuses unchanged files and parses safe appends;
+CSV output is still a cumulative replacement snapshot, never a token delta.
+First-run baseline scanning can be slow. Unsupported flags, invalid output and
+timeouts stop that cycle without fallback or fake food. The default full-export
+mode remains compatible with older CLIs. The exporter cache contains local source
+data: keep it private and separate from the reporter cache. No internal exporter
+implementation is included here.
+
 First positive usage earns one meal; exceeding each additional 20% of the daily
 target unlocks another, capped at five. The target is the previous 14 active
 days' median, excluding today, or 1,000,000 without history. `--goal` can override
@@ -101,8 +111,8 @@ After pairing, unplug USB and keep the badge powered, computer Bluetooth enabled
 and companion running. Each cycle waits 300 seconds, exports local usage, connects,
 syncs and disconnects. No autostart service is installed. macOS may request terminal
 Bluetooth permission; only the user may grant it. Out-of-range/sleep delays sync
-without losing food; the next cycle retries. Collection still uses full local
-exports, not an incremental collector.
+without losing food; the next cycle retries. Collection uses full scans by
+default; `--cached-export` opts into the cached cumulative export described above.
 Discovery/connection timeouts get up to three attempts per cycle with 2/4-second
 backoff and fresh discovery. Identity/authentication failures are not retried by
 this connection policy. Cold connection latency remains variable on macOS.
@@ -175,7 +185,7 @@ ROUTE is read-only and returns `route`, `locked` and `stage`; route IDs are
 0=CORE (unformed), 1=ARMOR, 2=WILD, 3=EXPLORER. Existing STATUS/SYNC fields stay unchanged.
 
 Remaining: Bits settlement and certified feature-based routes, independent Flux
-adapter, incremental collection, selectable species, encounters, sound and production sprite artwork.
+adapter, selectable species, encounters, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
 Concurrent Wi-Fi scans and the 96 KB recording demo with the persistent radio

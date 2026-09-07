@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- Add an opt-in cached cumulative export source for both desktop transports;
+  preserve full-export compatibility, privacy and idempotent meal allowances.
+
 - Add three local food-intensity evolution routes, a read-only final-form preview
   page, route-specific bodies and archived route identity. Lock at RANGER without
   changing v2 save layout, growth limits or existing STATUS/SYNC. Add authenticated

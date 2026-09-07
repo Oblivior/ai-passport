@@ -3,6 +3,8 @@ import importlib.util
 import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
+from types import SimpleNamespace
+import subprocess
 
 spec = importlib.util.spec_from_file_location("companion", Path(__file__).resolve().parents[1] / "tools/pet_companion.py")
 c = importlib.util.module_from_spec(spec)
@@ -12,6 +14,34 @@ HEADER = "source,model,project,hostname,bucketStart,totalTokens,inputTokens,outp
 
 
 class CompanionTests(unittest.TestCase):
+    def test_cached_export_is_cumulative_and_opt_in(self):
+        args = SimpleNamespace(csv=None, kaboo_cli="fixture-cli", cached_export=True)
+        output = HEADER + "code,m,p,h,2026-09-07T00:00:00Z,100,0,0\n"
+        with patch.object(c.subprocess, "run", return_value=Mock(returncode=0, stdout=output)) as run:
+            first = c.load_source(args)
+            self.assertEqual(c.load_source(args), first)
+        self.assertEqual(first, {dt.date(2026, 9, 7): 100})
+        self.assertEqual(run.call_args.args[0], ["fixture-cli", "export", "--format", "csv", "--cached"])
+        self.assertEqual(run.call_args.kwargs["env"]["KABOO_SKIP_AUTO_UPDATE"], "1")
+
+    def test_cached_export_failure_never_falls_back_or_returns_zero(self):
+        args = SimpleNamespace(csv=None, kaboo_cli="fixture-cli", cached_export=True)
+        for result in (Mock(returncode=1, stdout=""), Mock(returncode=0, stdout="NA")):
+            with patch.object(c.subprocess, "run", return_value=result) as run:
+                with self.assertRaises(ValueError):
+                    c.load_source(args)
+                run.assert_called_once()
+        with patch.object(c.subprocess, "run", side_effect=subprocess.TimeoutExpired("fixture", 120)):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                c.load_source(args)
+
+    def test_legacy_export_keeps_isolated_temporary_cache(self):
+        args = SimpleNamespace(csv=None, kaboo_cli="fixture-cli")
+        with patch.object(c.subprocess, "run", return_value=Mock(returncode=0, stdout=HEADER)) as run:
+            self.assertEqual(c.load_source(args), {})
+        self.assertNotIn("--cached", run.call_args.args[0])
+        self.assertIn("passport-kaboo-", run.call_args.kwargs["env"]["KABOO_SCAN_CACHE_PATH"])
+
     def test_timezone_and_dedup(self):
         row = "code,m,p,h,2026-09-06T16:00:00Z,100,30,80\n"
         totals = c.aggregate_csv(HEADER + row + row)
