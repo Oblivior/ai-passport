@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import os
 from pathlib import Path
@@ -64,6 +65,36 @@ class WirelessTests(unittest.TestCase):
 
 
 class ExchangeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_connection_timeout_retries_with_bounded_backoff(self):
+        result = (Mock(), bytes(16))
+        with patch.object(w, "_connect_once", AsyncMock(side_effect=[TimeoutError(), asyncio.TimeoutError(), result])) as connect, \
+                patch.object(w.asyncio, "sleep", AsyncMock()) as sleep:
+            self.assertIs(await w.connect_device(bytes(32)), result)
+        self.assertEqual(connect.await_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.await_args_list], [2, 4])
+
+    async def test_connection_retries_stop_after_three_timeouts(self):
+        with patch.object(w, "_connect_once", AsyncMock(side_effect=TimeoutError())) as connect, \
+                patch.object(w.asyncio, "sleep", AsyncMock()):
+            with self.assertRaises(TimeoutError):
+                await w.connect_device(bytes(32))
+        self.assertEqual(connect.await_count, 3)
+
+    async def test_connection_identity_errors_are_not_retried(self):
+        with patch.object(w, "_connect_once", AsyncMock(side_effect=ValueError("identity mismatch"))) as connect:
+            with self.assertRaises(ValueError):
+                await w.connect_device(bytes(32))
+        self.assertEqual(connect.await_count, 1)
+
+    async def test_watch_survives_async_timeout_on_python39(self):
+        from types import SimpleNamespace
+        args = SimpleNamespace(watch=True, interval=300)
+        with patch.object(w, "sync_once", AsyncMock(side_effect=asyncio.TimeoutError())) as sync, \
+                patch.object(w.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError())):
+            with self.assertRaises(asyncio.CancelledError):
+                await w.watch(args, bytes(32))
+        self.assertEqual(sync.await_count, 1)
+
     async def test_cold_discovery_matches_name_and_service_locally(self):
         key = bytes(range(32))
         client = AsyncMock()

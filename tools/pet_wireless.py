@@ -74,6 +74,19 @@ def parse_reply(line, expected):
 
 
 async def connect_device(key):
+    # Cold CoreBluetooth connections can time out even when advertisements
+    # arrive. Re-discover with a fresh client; never retry identity/auth errors.
+    for attempt in range(3):
+        try:
+            return await _connect_once(key)
+        except (TimeoutError, asyncio.TimeoutError):
+            if attempt == 2:
+                raise
+            print("Bluetooth connection timed out; rescanning (%d/3)" % (attempt + 2), flush=True)
+            await asyncio.sleep(2 * (attempt + 1))
+
+
+async def _connect_once(key):
     from bleak import BleakClient, BleakScanner
     expected = "AIPet-" + key_id(key)
     # On this Mac a service-filtered cold scan did not discover the name in
@@ -131,7 +144,7 @@ async def watch(args, key):
     while True:
         try:
             await sync_once(args, key)
-        except (OSError, ValueError, TimeoutError, InvalidTag, BleakError, c.subprocess.TimeoutExpired) as exc:
+        except (OSError, ValueError, TimeoutError, asyncio.TimeoutError, InvalidTag, BleakError, c.subprocess.TimeoutExpired) as exc:
             # Never print raw packet or key content.
             print("Wireless sync failed: " + (str(exc) or type(exc).__name__), flush=True)
             if not args.watch:

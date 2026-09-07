@@ -80,6 +80,9 @@ syncs and disconnects. No autostart service is installed. macOS may request term
 Bluetooth permission; only the user may grant it. Out-of-range/sleep delays sync
 without losing food; the next cycle retries. Collection still uses full local
 exports, not an incremental collector.
+Discovery/connection timeouts get up to three attempts per cycle with 2/4-second
+backoff and fresh discovery. Identity/authentication failures are not retried by
+this connection policy. Cold connection latency remains variable on macOS.
 
 `--config` selects a pairing file; default `~/.config/ai-passport/link.json` must
 be mode 0600. The key is saved locally before USB provisioning, so a lost ACK can

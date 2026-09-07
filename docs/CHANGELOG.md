@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Retry cold BLE discovery/connection timeouts up to three times with bounded
+  backoff, and handle Python 3.9 asyncio timeouts without stopping watch mode.
+  Identity and authentication failures remain fail-closed.
+
 - Start the persistent radio after board bring-up and match badge identity plus
   service locally during macOS discovery to handle cold scan name availability.
 
