@@ -124,9 +124,9 @@ static void show_scan_results(void)
         if (written < 0 || (size_t)written >= sizeof(text) - used) break;
         used += (size_t)written;
     }
-    if (count == 0) snprintf(text, sizeof(text), "No access points found");
+    if (count == 0) snprintf(text, sizeof(text), "未找到无线网络");
 
-    lv_label_set_text_fmt(s_status, "%u APs  |  OK: RESCAN", total);
+    lv_label_set_text_fmt(s_status, "%u 个网络 | 确定重扫", total);
     lv_label_set_text(s_results, text);
     s_state = WIFI_DEMO_OFF;
 }
@@ -136,16 +136,16 @@ static void tick(lv_timer_t *timer)
     (void)timer;
     switch (s_state) {
     case WIFI_DEMO_STARTING:
-        lv_label_set_text(s_status, "Starting Wi-Fi...");
+        lv_label_set_text(s_status, "正在启动 Wi-Fi...");
         break;
     case WIFI_DEMO_SCANNING:
-        lv_label_set_text(s_status, "Scanning 2.4 GHz...");
+        lv_label_set_text(s_status, "扫描 2.4 GHz...");
         break;
     case WIFI_DEMO_READY:
         show_scan_results();
         break;
     case WIFI_DEMO_FAILED:
-        lv_label_set_text_fmt(s_status, "Wi-Fi failed: %s", esp_err_to_name(s_error));
+        lv_label_set_text_fmt(s_status, "Wi-Fi 失败：%s", esp_err_to_name(s_error));
         s_state = WIFI_DEMO_OFF;
         break;
     default:
@@ -178,21 +178,21 @@ static void wifi_stop(void)
 
 void demo_wifi_enter(void)
 {
-    s_scr = ui_pixel_screen_create("WI-FI SCAN");
+    s_scr = ui_pixel_screen_create("无线扫描");
     lv_obj_t *panel = ui_pixel_panel_create(s_scr, 12, 54, 216, 190, UI_PAPER);
 
     s_status = lv_label_create(panel);
     lv_obj_set_width(s_status, 190);
     lv_obj_set_style_text_color(s_status, lv_color_hex(UI_SKY_DARK), 0);
     lv_obj_align(s_status, LV_ALIGN_TOP_LEFT, 2, 2);
-    lv_label_set_text(s_status, "Starting Wi-Fi...");
+    lv_label_set_text(s_status, "正在启动 Wi-Fi...");
 
     s_results = lv_label_create(panel);
     lv_obj_set_width(s_results, 190);
-    lv_obj_set_style_text_font(s_results, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(s_results, &passport_zh_14, 0);
     lv_obj_set_style_text_color(s_results, lv_color_hex(UI_INK), 0);
     lv_obj_align(s_results, LV_ALIGN_TOP_LEFT, 2, 35);
-    lv_label_set_text(s_results, "RSSI  SSID  CHANNEL");
+    lv_label_set_text(s_results, "信号  网络名称  频道");
 
     ui_pixel_mascot_create(s_scr, 101, 246);
     s_timer = lv_timer_create(tick, 100, NULL);
@@ -217,6 +217,6 @@ void demo_wifi_exit(void)
 void demo_wifi_key(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
     if (btn != BSP_BTN_OK || ev != BSP_BTN_CLICK || s_state != WIFI_DEMO_OFF) return;
-    lv_label_set_text(s_results, "RSSI  SSID  CHANNEL");
+    lv_label_set_text(s_results, "信号  网络名称  频道");
     start_scan();
 }

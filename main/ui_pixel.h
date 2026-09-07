@@ -2,6 +2,9 @@
 
 #include "lvgl.h"
 
+LV_FONT_DECLARE(passport_zh_14);
+LV_FONT_DECLARE(passport_zh_20);
+
 #define UI_SKY        0x1689E8
 #define UI_SKY_DARK   0x0872C9
 #define UI_INK        0x17202A

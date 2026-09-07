@@ -20,14 +20,14 @@
 static const char *TAG = "main";
 
 static const demo_entry_t DEMOS[] = {
-    { "AI Pet",  demo_pet_enter,      demo_pet_exit,      demo_pet_key      },
-    { "Display", demo_display_enter, demo_display_exit, demo_display_key },
-    { "Button",  demo_button_enter,  demo_button_exit,  demo_button_key  },
-    { "Audio",   demo_audio_enter,   demo_audio_exit,   demo_audio_key   },
-    { "Battery", demo_battery_enter, demo_battery_exit, demo_battery_key },
+    { "数码伙伴",  demo_pet_enter,      demo_pet_exit,      demo_pet_key      },
+    { "屏幕", demo_display_enter, demo_display_exit, demo_display_key },
+    { "按键",  demo_button_enter,  demo_button_exit,  demo_button_key  },
+    { "声音",   demo_audio_enter,   demo_audio_exit,   demo_audio_key   },
+    { "电量", demo_battery_enter, demo_battery_exit, demo_battery_key },
     { "Wi-Fi",   demo_wifi_enter,    demo_wifi_exit,    demo_wifi_key    },
-    { "Pet Link", demo_ble_enter,    demo_ble_exit,     demo_ble_key     },
-    { "Low Power", demo_low_power_enter, demo_low_power_exit, demo_low_power_key },
+    { "无线饭盒", demo_ble_enter,    demo_ble_exit,     demo_ble_key     },
+    { "休眠", demo_low_power_enter, demo_low_power_exit, demo_low_power_key },
 };
 #define DEMO_COUNT (sizeof(DEMOS) / sizeof(DEMOS[0]))
 
@@ -45,7 +45,7 @@ static void menu_refresh(void) {
     for (size_t i = 0; i < DEMO_COUNT; i++) {
         lv_label_set_text_fmt(s_rows[i], "%s%s",
                               DEMOS[i].name,
-                              s_ok[i] ? "" : "  [FAIL]");
+                              s_ok[i] ? "" : " [!]");
         ui_pixel_set_selected(s_cards[i], (int)i == s_sel, s_ok[i]);
         lv_obj_set_style_text_color(s_rows[i],
             s_ok[i] ? lv_color_hex(UI_INK) : lv_color_hex(0x7A2020), 0);
@@ -60,7 +60,7 @@ static void menu_build(void) {
         int y = 52 + (int)(i / 2) * 47;
         s_cards[i] = ui_pixel_panel_create(s_menu_scr, x, y, 102, 40, UI_PAPER);
         s_rows[i] = lv_label_create(s_cards[i]);
-        lv_obj_set_style_text_font(s_rows[i], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(s_rows[i], &passport_zh_14, 0);
         lv_obj_set_style_text_align(s_rows[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(s_rows[i]);
     }

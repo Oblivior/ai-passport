@@ -1,6 +1,7 @@
 #include "demo.h"
 #include "pet_service.h"
 #include "pet_view.h"
+#include "pet_ui_text.h"
 #include "ui_pixel.h"
 #include "bsp_battery.h"
 #include "esp_timer.h"
@@ -19,7 +20,7 @@ static bool s_eat_requested;
 
 static lv_obj_t *label(lv_obj_t *parent, const char *text, int y, uint32_t color)
 {
-    lv_obj_t *obj = ui_pixel_label(parent, text, &lv_font_montserrat_14, color);
+    lv_obj_t *obj = ui_pixel_label(parent, text, &passport_zh_14, color);
     lv_obj_set_width(obj, 192);
     lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, y);
@@ -28,15 +29,15 @@ static lv_obj_t *label(lv_obj_t *parent, const char *text, int y, uint32_t color
 
 static const char *home_hint(void)
 {
-    if (!s_state.ready) return "WAKING UP...";
-    if (!s_state.storage_ok) return "SAVE ERROR - RETRY";
-    if (s_pose == PET_POSE_EAT) return "MUNCH MUNCH...";
-    if (s_pose == PET_POSE_EVOLVE) return "EVOLVING...";
-    if (s_pose == PET_POSE_HAPPY) return "HAPPY TO SEE YOU!";
-    if (pet_life_pending(&s_state.life)) return "OK: OPEN LUNCHBOX";
-    if (!s_state.life.date) return "CONNECT USB TO HATCH";
-    if (s_pose == PET_POSE_SLEEP) return "RESTING - OK: WAKE";
-    return "OK: PET YOUR BUDDY";
+    if (!s_state.ready) return "正在醒来...";
+    if (!s_state.storage_ok) return "存档失败，请重试";
+    if (s_pose == PET_POSE_EAT) return "啊呜啊呜，真香！";
+    if (s_pose == PET_POSE_EVOLVE) return "要进化啦！";
+    if (s_pose == PET_POSE_HAPPY) return "见到你真开心！";
+    if (pet_life_pending(&s_state.life)) return "按确定：开饭啦";
+    if (!s_state.life.date) return "连接电脑同步后孵化";
+    if (s_pose == PET_POSE_SLEEP) return "睡觉中，按确定唤醒";
+    return "按确定：摸摸它";
 }
 
 static void draw_home(void)
@@ -47,14 +48,14 @@ static void draw_home(void)
     lv_obj_set_style_border_width(plate, 2, 0);
     uint8_t stage = s_pose == PET_POSE_EVOLVE || s_pose == PET_POSE_EAT ? s_before_stage : s_state.life.stage;
     pet_route_t route = pet_life_route_locked(&s_state.life) ? pet_life_route(&s_state.life) : PET_ROUTE_CORE;
-    lv_obj_t *name = ui_pixel_label(plate, pet_model_stage_name(stage),
-        stage >= PET_STAGE_RANGER ? &lv_font_montserrat_14 : &lv_font_montserrat_20, UI_INK);
+    lv_obj_t *name = ui_pixel_label(plate, pet_ui_stage_name(stage),
+        stage >= PET_STAGE_RANGER ? &passport_zh_14 : &passport_zh_20, UI_INK);
     if (stage >= PET_STAGE_RANGER) lv_label_set_text_fmt(name, "%s / %s",
-        pet_model_stage_name(stage), pet_model_route_name(route));
+        pet_ui_stage_name(stage), pet_ui_route_name(route));
     lv_obj_center(name);
     s_pet = pet_view_create_route_pose(panel, stage, route, 49, 40, s_pose);
     lv_obj_t *stats = label(panel, "", 140, UI_INK);
-    lv_label_set_text_fmt(stats, "LUNCH %u    DAYS %u", pet_life_pending(&s_state.life), pet_life_days(&s_state.life));
+    lv_label_set_text_fmt(stats, "饭盒 %u    陪伴 %u 天", pet_life_pending(&s_state.life), pet_life_days(&s_state.life));
     unsigned pending = pet_life_pending(&s_state.life);
     lv_obj_t *tray = lv_obj_create(panel);
     lv_obj_set_size(tray, 112, 12);
@@ -71,45 +72,45 @@ static void draw_home(void)
 static void draw_progress(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, s_state.life.stage == PET_STAGE_APEX ? "FINAL FORM" : "NEXT EVOLUTION", 0, UI_INK);
+    label(panel, s_state.life.stage == PET_STAGE_APEX ? "最终形态" : "下次进化", 0, UI_INK);
     const pet_life_t *life = &s_state.life;
-    label(panel, pet_model_stage_name(life->stage < PET_STAGE_APEX ? life->stage + 1 : PET_STAGE_APEX), 25, UI_ORANGE);
+    label(panel, pet_ui_stage_name(life->stage < PET_STAGE_APEX ? life->stage + 1 : PET_STAGE_APEX), 25, UI_ORANGE);
     lv_obj_t *stats = label(panel, "", 55, UI_INK);
-    lv_label_set_text_fmt(stats, "MEALS   %u / %u\n\nACTIVE DAYS   %u / %u",
+    lv_label_set_text_fmt(stats, "已吃 %u / %u 份\n\n活跃 %u / %u 天",
         pet_life_meals(life), pet_life_next_meals(life), pet_life_days(life), pet_life_next_days(life));
     lv_obj_t *date = label(panel, "", 123, UI_SKY_DARK);
-    if (life->date) lv_label_set_text_fmt(date, "%04lu-%02lu-%02lu\nKABOO / LOCAL",
+    if (life->date) lv_label_set_text_fmt(date, "%04lu-%02lu-%02lu\nKaboo / 本地统计",
         (unsigned long)(life->date / 10000), (unsigned long)(life->date / 100 % 100), (unsigned long)(life->date % 100));
-    else lv_label_set_text(date, "WAITING FOR FIRST SYNC");
+    else lv_label_set_text(date, "等待首次同步");
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    label(panel, !s_state.synced_at || now - s_state.synced_at > 600000U ? "SYNC NEEDED" :
-        (s_state.synced_wirelessly ? "WIRELESS SYNC OK" : "USB SYNC OK"), 166, UI_INK);
-    label(panel, "REST WITHOUT LOSS", 180, UI_SKY_DARK);
+    label(panel, !s_state.synced_at || now - s_state.synced_at > 600000U ? "等待用量同步" :
+        (s_state.synced_wirelessly ? "无线同步成功" : "USB 同步成功"), 160, UI_INK);
+    label(panel, "休息不掉成长值", 180, UI_SKY_DARK);
 }
 
 static void draw_route(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
     pet_route_t route = s_route_preview ? (pet_route_t)s_route_preview : pet_life_route(&s_state.life);
-    label(panel, pet_model_route_name(route), 0, UI_INK);
-    label(panel, s_route_preview ? "PREVIEW ONLY" : pet_life_route_locked(&s_state.life) ?
-        "YOUR LOCKED ROUTE" : "YOUR TENDENCY", 22, UI_SKY_DARK);
+    label(panel, pet_ui_route_name(route), 0, UI_INK);
+    label(panel, s_route_preview ? "形态预览" : pet_life_route_locked(&s_state.life) ?
+        "本月路线已确定" : "目前的进化倾向", 22, UI_SKY_DARK);
     pet_stage_t stage = s_route_preview ? PET_STAGE_APEX : s_state.life.stage >= PET_STAGE_RANGER ?
         s_state.life.stage : PET_STAGE_RANGER;
     pet_view_create_route_pose(panel, stage, route, 49, 42, PET_POSE_IDLE);
-    label(panel, pet_life_route_hint(route), 140, UI_INK);
-    label(panel, s_route_preview ? "SAME GROWTH LIMITS" : pet_life_route_locked(&s_state.life) ?
-        "KEPT IN YOUR FAMILY" : "LOCKS AT RANGER", 158, UI_SKY_DARK);
-    label(panel, "OK: PREVIEW ROUTES", 180, UI_INK);
+    label(panel, pet_ui_route_hint(route), 140, UI_INK);
+    label(panel, s_route_preview ? "各路线成长门槛相同" : pet_life_route_locked(&s_state.life) ?
+        "将保留在家族图鉴" : "到游侠阶段确定路线", 158, UI_SKY_DARK);
+    label(panel, "按确定：切换预览", 180, UI_INK);
 }
 
 static void draw_archive(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, "MY PET FAMILY", 0, UI_INK);
+    label(panel, "我的家族图鉴", 0, UI_INK);
     unsigned count = s_state.life.family.archive_count;
     if (!count) {
-        label(panel, "YOUR FIRST CHAPTER\nIS STILL GROWING\n\nCOME BACK NEXT MONTH", 60, UI_SKY_DARK);
+        label(panel, "第一只伙伴\n还在慢慢长大\n\n下个月来翻翻图鉴吧", 60, UI_SKY_DARK);
         return;
     }
     s_archive %= count;
@@ -117,10 +118,10 @@ static void draw_archive(void)
     pet_view_create_route_pose(panel, entry->stage, entry->route, 49, 28, PET_POSE_IDLE);
     lv_obj_t *details = label(panel, "", 126, UI_INK);
     lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s\n%s  %u/%u", entry->year, entry->month,
-        pet_model_stage_name(entry->stage), pet_model_route_name(entry->route),
-        s_state.life.legacy_mask & (1U << s_archive) ? "DEMO MEMORY" : "LOCAL CHAPTER",
+        pet_ui_stage_name(entry->stage), pet_ui_route_name(entry->route),
+        s_state.life.legacy_mask & (1U << s_archive) ? "试玩回忆" : "本地成长记录",
         s_archive + 1, count);
-    label(panel, "OK: NEXT MEMORY", 180, UI_SKY_DARK);
+    label(panel, "按确定：下一只伙伴", 180, UI_SKY_DARK);
 }
 
 static void draw_page(void)
@@ -189,8 +190,8 @@ void demo_pet_enter(void)
     s_eat_requested = false;
     s_route_preview = 0;
     s_archive = s_state.life.family.archive_count ? s_state.life.family.archive_count - 1 : 0;
-    s_scr = ui_pixel_screen_create("AI PET");
-    s_battery = ui_pixel_label(s_scr, "--%", &lv_font_montserrat_14, UI_PAPER);
+    s_scr = ui_pixel_screen_create("数码伙伴");
+    s_battery = ui_pixel_label(s_scr, "--%", &passport_zh_14, UI_PAPER);
     lv_obj_set_pos(s_battery, 169, 29);
     lv_obj_set_width(s_battery, 65);
     lv_obj_set_style_text_align(s_battery, LV_TEXT_ALIGN_RIGHT, 0);

@@ -40,6 +40,7 @@ lv_obj_t *ui_pixel_screen_create(const char *title)
     lv_obj_set_style_bg_color(scr, lv_color_hex(UI_SKY), 0);
     lv_obj_set_style_border_width(scr, 0, 0);
     lv_obj_set_style_pad_all(scr, 0, 0);
+    lv_obj_set_style_text_font(scr, &passport_zh_14, 0);
 
     add_cloud(scr, 188, 8);
     block(scr, 0, 286, 240, 34, UI_GRASS);
@@ -53,7 +54,7 @@ lv_obj_t *ui_pixel_screen_create(const char *title)
     lv_obj_t *plate = block(scr, 5, 8, 151, 33, UI_PAPER);
     lv_obj_set_style_border_color(plate, lv_color_hex(UI_INK), 0);
     lv_obj_set_style_border_width(plate, 3, 0);
-    lv_obj_t *heading = ui_pixel_label(plate, title, &lv_font_montserrat_20, UI_INK);
+    lv_obj_t *heading = ui_pixel_label(plate, title, &passport_zh_20, UI_INK);
     lv_obj_center(heading);
     return scr;
 }

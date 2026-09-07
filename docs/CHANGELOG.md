@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- Localize the badge UI into Simplified Chinese, including pet forms, lunch,
+  evolution, routes, family, connection status and demo menus. Embed a small
+  OFL-licensed 14/20 px font subset and check glyph coverage and page bounds.
+  Keep save data, wire identifiers and growth rules unchanged.
+
 - Add an opt-in cached cumulative export source for both desktop transports;
   preserve full-export compatibility, privacy and idempotent meal allowances.
 

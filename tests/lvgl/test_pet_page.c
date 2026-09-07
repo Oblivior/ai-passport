@@ -2,6 +2,8 @@
 #include "pet_service.h"
 #include "pet_ble.h"
 #include "lvgl.h"
+#include "src/misc/lv_text_private.h"
+#include "pet_ui_text.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +43,17 @@ static void advance(unsigned milliseconds)
 static void bounds(lv_obj_t *obj)
 {
     if (lv_obj_check_type(obj, &lv_label_class)) {
+        const char *text = lv_label_get_text(obj);
+        const lv_font_t *font = lv_obj_get_style_text_font(obj, 0);
+        uint32_t offset = 0, codepoint;
+        while ((codepoint = lv_text_encoded_next(text, &offset))) {
+            if (codepoint == '\n') continue;
+            lv_font_glyph_dsc_t glyph = {0};
+            if (!font->get_glyph_dsc(font, &glyph, codepoint, 0)) {
+                fprintf(stderr, "missing glyph U+%04X in %s\n", (unsigned)codepoint, text);
+                assert(false);
+            }
+        }
         lv_area_t a, p;
         lv_obj_get_coords(obj, &a);
         lv_obj_get_coords(lv_obj_get_parent(obj), &p);
@@ -49,6 +62,14 @@ static void bounds(lv_obj_t *obj)
                     lv_label_get_text(obj), (int)a.x1, (int)a.y1, (int)a.x2, (int)a.y2,
                     (int)p.x1, (int)p.y1, (int)p.x2, (int)p.y2);
             assert(false);
+        }
+        lv_obj_t *parent = lv_obj_get_parent(obj);
+        for (unsigned i = 0; i < lv_obj_get_child_count(parent); i++) {
+            lv_obj_t *other = lv_obj_get_child(parent, i);
+            if (other == obj || !lv_obj_check_type(other, &lv_label_class)) continue;
+            lv_area_t b;
+            lv_obj_get_coords(other, &b);
+            assert(a.x2 < b.x1 || b.x2 < a.x1 || a.y2 < b.y1 || b.y2 < a.y1);
         }
     }
     for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++) bounds(lv_obj_get_child(obj, i));
@@ -79,6 +100,9 @@ int main(void)
     static uint8_t buffer[240 * 20 * 2];
     lv_display_set_buffers(display, buffer, NULL, sizeof(buffer), LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, flush);
+    assert(strcmp(pet_model_stage_name(PET_STAGE_EGG), "EGG") == 0);
+    assert(strcmp(pet_ui_stage_name(PET_STAGE_EGG), "数码蛋") == 0);
+    assert(strcmp(pet_ui_route_name(PET_ROUTE_ARMOR), "装甲") == 0);
     pet_model_t old;
     pet_model_init(&old);
     pet_model_begin_month(&old, 2026, 9);
@@ -159,7 +183,39 @@ int main(void)
     advance(200);
     capture("apex-happy");
     demo_pet_exit();
+    /* Every stage and its next-stage label must fit with real CJK metrics. */
+    for (unsigned stage = 0; stage < PET_STAGE_COUNT; stage++) {
+        snapshot.life.stage = stage;
+        snapshot.life.family.route = PET_ROUTE_EXPLORER;
+        snapshot.revision++;
+        lv_screen_load(lv_obj_create(NULL));
+        demo_pet_enter();
+        advance(300);
+        char name[32];
+        snprintf(name, sizeof(name), "zh-stage-%u", stage);
+        capture(name);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        advance(300);
+        capture("zh-next-stage");
+        demo_pet_exit();
+    }
+    snapshot.storage_ok = false;
+    lv_screen_load(lv_obj_create(NULL));
+    demo_pet_enter();
+    advance(300);
+    capture("zh-save-error");
+    demo_pet_exit();
+    snapshot.storage_ok = true;
+    snapshot.life.family.archive_count = 0;
+    lv_screen_load(lv_obj_create(NULL));
+    demo_pet_enter();
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    advance(300);
+    capture("zh-empty-family");
+    demo_pet_exit();
     /* Each route keeps its own final form, sleep face and archived identity. */
+    snapshot.life.family.archive_count = 1;
+    snapshot.life.stage = PET_STAGE_APEX;
     for (unsigned route = PET_ROUTE_ARMOR; route <= PET_ROUTE_EXPLORER; route++) {
         snapshot.life.family.route = route;
         snapshot.life.family.archive[0].route = route;

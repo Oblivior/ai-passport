@@ -37,6 +37,7 @@ run_static_checks() {
         -o "${test_dir}/test_pet_life"
     "${test_dir}/test_pet_life"
     python3 tests/test_pet_companion.py
+    python3 tests/test_ui_fonts.py
     python3 tests/test_verify_firmware.py
     rm -rf "${test_dir}"
     echo "Host tests: PASS"

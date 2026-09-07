@@ -60,7 +60,7 @@ static void sleep_task(void *arg)
 
         s_busy = true;
         if (command == SLEEP_COMMAND_DEEP) {
-            set_status("DEEP SLEEP: 5 SEC\nApplication will restart");
+            set_status("深度休眠5秒\n唤醒后重新启动");
             vTaskDelay(pdMS_TO_TICKS(250));
             esp_err_t err = esp_sleep_enable_timer_wakeup(DEEP_SLEEP_TIME_US);
             if (err == ESP_OK) {
@@ -71,11 +71,11 @@ static void sleep_task(void *arg)
                 esp_deep_sleep_start();
             }
             char text[96];
-            snprintf(text, sizeof(text), "Deep sleep failed:\n%s", esp_err_to_name(err));
+            snprintf(text, sizeof(text), "深度休眠失败：\n%s", esp_err_to_name(err));
             set_status(text);
             ESP_LOGE(TAG, "deep sleep 失败: %s", esp_err_to_name(err));
         } else {
-            set_status("LIGHT SLEEP: 2 SEC\nTimer wakeup");
+            set_status("浅度休眠2秒\n定时唤醒");
             vTaskDelay(pdMS_TO_TICKS(150));
             bsp_display_backlight(0);
 
@@ -88,10 +88,10 @@ static void sleep_task(void *arg)
 
             char text[128];
             if (err == ESP_OK) {
-                snprintf(text, sizeof(text), "LIGHT WAKE: TIMER\nSlept: %lld ms",
+                snprintf(text, sizeof(text), "定时唤醒成功\n休眠 %lld ms",
                          (long long)slept_ms);
             } else {
-                snprintf(text, sizeof(text), "Light sleep failed:\n%s", esp_err_to_name(err));
+                snprintf(text, sizeof(text), "浅度休眠失败：\n%s", esp_err_to_name(err));
                 ESP_LOGE(TAG, "light sleep 失败: %s", esp_err_to_name(err));
             }
             set_status(text);
@@ -102,7 +102,7 @@ static void sleep_task(void *arg)
 
 void demo_low_power_enter(void)
 {
-    s_scr = ui_pixel_screen_create("LOW POWER");
+    s_scr = ui_pixel_screen_create("休眠测试");
     lv_obj_t *panel = ui_pixel_panel_create(s_scr, 14, 54, 212, 190, UI_PAPER);
     s_status = lv_label_create(panel);
     lv_obj_set_width(s_status, 184);
@@ -112,21 +112,21 @@ void demo_low_power_enter(void)
     if (s_deep_sleep_magic == DEEP_SLEEP_MAGIC &&
         esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
         lv_label_set_text_fmt(s_status,
-                              "DEEP TIMER WAKE  #%lu\nUP/DOWN: SELECT  OK: RUN",
+                              "深睡唤醒第 %lu 次\n上下选择，确定执行",
                               (unsigned long)s_deep_sleep_count);
     } else {
-        lv_label_set_text(s_status, "UP/DOWN: SELECT  OK: RUN\nRTC TIMER WAKE ONLY");
+        lv_label_set_text(s_status, "上下选择，确定执行\n仅支持定时唤醒");
     }
 
     static const char *MODE_NAMES[] = {
-        "LIGHT SLEEP  |  2 SEC",
-        "DEEP SLEEP   |  5 SEC",
+        "浅度休眠 | 2秒",
+        "深度休眠 | 5秒",
     };
     for (int i = 0; i < 2; i++) {
         s_mode_cards[i] = ui_pixel_panel_create(panel, 7, 56 + i * 54,
                                                  176, 42, UI_PAPER);
         lv_obj_t *label = lv_label_create(s_mode_cards[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(label, &passport_zh_14, 0);
         lv_obj_set_style_text_color(label, lv_color_hex(UI_INK), 0);
         lv_label_set_text(label, MODE_NAMES[i]);
         lv_obj_center(label);
@@ -136,7 +136,7 @@ void demo_low_power_enter(void)
     s_mascot = ui_pixel_mascot_create(s_scr, 101, 246);
     s_busy = false;
     if (!s_task && xTaskCreate(sleep_task, "demo_sleep", 3072, NULL, 4, &s_task) != pdPASS) {
-        lv_label_set_text(s_status, "Cannot create\nsleep worker");
+        lv_label_set_text(s_status, "无法启动\n休眠任务");
         ESP_LOGE(TAG, "创建 light-sleep 任务失败");
     }
     lv_screen_load(s_scr);
