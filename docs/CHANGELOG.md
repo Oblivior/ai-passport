@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Add USB-provisioned AES-256-GCM wireless lunch delivery, replay protection,
+  private desktop pairing files, a Pet Link status page and transport-aware sync
+  feedback. Keep the pet save format and wired fallback unchanged.
+
 - Initialize the ESP-IDF USB receive driver for food sync; keep the companion's
   serial connection open between watch cycles and retry startup handshakes.
 

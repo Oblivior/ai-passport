@@ -77,7 +77,8 @@ static void draw_progress(void)
         (unsigned long)(life->date / 10000), (unsigned long)(life->date / 100 % 100), (unsigned long)(life->date % 100));
     else lv_label_set_text(date, "WAITING FOR FIRST SYNC");
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    label(panel, !s_state.synced_at || now - s_state.synced_at > 600000U ? "USB SYNC NEEDED" : "USB SYNC OK", 166, UI_INK);
+    label(panel, !s_state.synced_at || now - s_state.synced_at > 600000U ? "SYNC NEEDED" :
+        (s_state.synced_wirelessly ? "WIRELESS SYNC OK" : "USB SYNC OK"), 166, UI_INK);
     label(panel, "REST WITHOUT LOSS", 180, UI_SKY_DARK);
 }
 

@@ -13,7 +13,7 @@ target_include_directories(test_pet_view PRIVATE ../../main)
 target_link_libraries(test_pet_view PRIVATE lvgl::lvgl)
 enable_testing()
 add_test(NAME pet_view_regression COMMAND test_pet_view)
-add_executable(test_pet_page test_pet_page.c ../../main/demo_pet.c ../../main/pet_view.c
+add_executable(test_pet_page test_pet_page.c ../../main/demo_pet.c ../../main/demo_ble.c ../../main/pet_view.c
     ../../main/pet_life.c ../../main/pet_model.c ../../main/ui_pixel.c ../../main/ui_pixel_math.c)
 target_include_directories(test_pet_page PRIVATE stubs ../../main ../../components/bsp/include)
 target_link_libraries(test_pet_page PRIVATE lvgl::lvgl)

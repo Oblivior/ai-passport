@@ -3,7 +3,7 @@
 # AI Pet Passport: daily lunchbox
 
 This fork consumes local Kaboo CSV exports to feed an original pixel pet over
-USB. It is a playable prototype, not the finished wireless product.
+USB or application-encrypted BLE. It is a playable prototype, not a finished product.
 
 ## Play
 
@@ -60,6 +60,49 @@ allowances reach the device. Invalid/missing data stops sync, not a fake zero.
 
 ## Storage and transport
 
+### Wireless lunch delivery (Phase 2)
+
+Install `tools/requirements-pet-wireless.txt` in the companion virtual environment.
+Stop the USB watch process, then provision once over the connected device's USB:
+
+```bash
+python3 -m pip install -r tools/requirements-pet-wireless.txt
+python3 tools/pet_wireless.py --pair-usb /dev/cu.usbmodem101
+python3 tools/pet_wireless.py --watch
+```
+
+After pairing, unplug USB and keep the badge powered, computer Bluetooth enabled,
+and companion running. Each cycle waits 300 seconds, exports local usage, connects,
+syncs and disconnects. No autostart service is installed. macOS may request terminal
+Bluetooth permission; only the user may grant it. Out-of-range/sleep delays sync
+without losing food; the next cycle retries. Collection still uses full local
+exports, not an incremental collector.
+
+`--config` selects a pairing file; default `~/.config/ai-passport/link.json` must
+be mode 0600. The key is saved locally before USB provisioning, so a lost ACK can
+retry the same file. A paired device rejects another key. Keep the only key copy:
+wireless reset/rebinding is not implemented. Pet Link shows connection/errors;
+leaving it does not stop the radio. Progress distinguishes USB / WIRELESS SYNC OK.
+Authentication failures never fall back to plaintext or USB.
+
+Security boundary: standard AES-256-GCM application encryption/authentication,
+not OS BLE bonding. Each connection has a fresh 16-byte challenge. Direction plus
+challenge forms the AAD; frames have a random 12-byte nonce and 16-byte tag.
+Plaintext contains a 4-byte big-endian increasing sequence followed by PET2 text.
+Wrong keys, tampering, cross-session or old-sequence replay cannot feed the pet.
+Only STATUS/SYNC are accepted; PAIR and LINK diagnostics are USB-only. Idle
+unauthenticated clients time out; a one-item queue and failure limit bound work.
+This does not prevent radio interference or sustained denial of service. Pairing
+files and device NVS are not encrypted at rest: physical access or local file access
+can expose the key. Never upload pairing files, NVS backups or raw exports.
+
+Service: `2b251000-8db0-4bdb-8b45-947717e4e6fa`; replace `1000` with
+`1001/1002/1003` for INFO/REQUEST/RESPONSE. INFO contains byte 3, eight ASCII
+pairing-ID bytes and the challenge. Request AAD is `PET3-C` plus challenge;
+response AAD is `PET3-S` plus challenge. Frame order: nonce, ciphertext, tag.
+A successful GATT write is not delivery: require the authenticated application
+ACK. Daily cumulative entitlements and commit-before-ACK remain unchanged.
+
 Legacy `ai_pet` saves remain untouched. New `ai_pet_v2` alternating CRC-protected
 slots import old pets as DEMO MEMORY; the live game starts as an egg. Family
 browses 12 recent records; older legacy records remain in the original save.
@@ -93,7 +136,14 @@ and cover layout, eating, evolution, sleep, repeated keys and teardown. Pure
 tests cover three-day progression, 16-day evolution gates, replay, catch-up,
 date validation, month rollover and legacy import.
 
-Remaining: BLE transport, Bits settlement, independent Flux adapter, selectable
-species, branching evolution, encounters, sound and production sprite artwork.
+Also run `python3 tests/test_pet_wireless.py` with the wireless dependencies:
+authentication, tampering, direction isolation, stale sequences, bounds, private
+configuration and ACK handling. Firmware rejection behavior, real wireless ACKs
+and radio-enabled memory require separate device checks.
+
+Remaining: Bits settlement, independent Flux adapter, incremental collection,
+selectable species, branching evolution, encounters, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
+Concurrent Wi-Fi scans and the 96 KB recording demo with the persistent radio
+have not completed resource acceptance; use AI Pet / Pet Link for daily play.

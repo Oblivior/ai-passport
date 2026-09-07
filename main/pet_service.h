@@ -7,6 +7,7 @@ typedef struct {
     uint32_t synced_at;
     bool storage_ok;
     bool ready;
+    bool synced_wirelessly;
 } pet_snapshot_t;
 
 /* App-lifetime worker owns USB, state and flash; never owns LVGL objects. */

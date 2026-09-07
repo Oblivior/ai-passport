@@ -2,7 +2,7 @@
 
 # AI Pet Passport：每日饭盒
 
-本 Fork 消费 Kaboo 本地 CSV 导出，通过 USB 给原创像素宠物投食。目前是可玩原型，尚非完整无线产品。
+本 Fork 消费 Kaboo 本地 CSV 导出，通过 USB 或应用层加密 BLE 给原创像素宠物投食。目前是可玩原型，尚非完整成品。
 
 ## 怎么玩
 
@@ -40,6 +40,24 @@ python3 tools/pet_companion.py --port /dev/cu.usbmodem101 --watch
 
 ## 存储与传输
 
+### 无线饭盒（Phase 2）
+
+在电脑的 Python 虚拟环境安装 `tools/requirements-pet-wireless.txt`。先停止 USB 同步窗口，再用连接设备的 USB 配对一次：
+
+```bash
+python3 -m pip install -r tools/requirements-pet-wireless.txt
+python3 tools/pet_wireless.py --pair-usb /dev/cu.usbmodem101
+python3 tools/pet_wireless.py --watch
+```
+
+配对成功后可拔掉 USB，保持胸牌开机、电脑蓝牙开启与伴侣窗口运行。正常每轮间隔 300 秒，读取本地用量后短暂连接、同步并断开；不安装自启服务。macOS 首次使用可能要求给终端蓝牙权限，必须由用户批准。超出范围或电脑休眠只延后同步，不扣食物；下轮自动重试。仍使用本地完整导出，不宣称已有增量采集优化。
+
+`--config` 可指定配对文件，默认 `~/.config/ai-passport/link.json`，权限必须为 0600。密钥先落到本机再经 USB 写入设备，ACK 丢失可用原文件重试。已经配对的设备拒绝其他密钥；不要删除唯一密钥副本，目前没有无线重置或换绑入口。菜单 Pet Link 查看配对/连接/错误状态，退出页面不会停掉饭盒服务；成长页区分 USB / WIRELESS SYNC OK。加密失败不回退明文或 USB。
+
+安全边界：采用标准 AES-256-GCM 的应用层加密认证，不是操作系统 BLE 绑定。每连接生成 16 字节挑战，方向标签和挑战作为 AAD，每帧 12 字节随机 nonce、16 字节认证标签；明文包含 4 字节大端递增序号及现有 PET2 命令。错误密钥、篡改、跨连接和旧序号均不能执行投食。仅允许 STATUS/SYNC，PAIR 与 LINK 诊断仅走 USB。未认证连接超时断开，错误请求受单元素队列和失败次数限制；不能承诺抗无线干扰或持续拒绝服务。配对文件和设备 NVS 未启用静态加密，物理访问设备或读取本机文件的人仍可取得密钥。不得上传配对文件、NVS 备份或原始导出。
+
+BLE 服务 `2b251000-8db0-4bdb-8b45-947717e4e6fa`，INFO/REQUEST/RESPONSE 将 `1000` 分别换为 `1001/1002/1003`。INFO 为版本字节 3、8 字节 ASCII 配对 ID、16 字节挑战。请求 AAD 为 `PET3-C` 加挑战，响应为 `PET3-S` 加挑战；帧为 nonce、密文、tag。GATT write 成功不代表已投食，必须读到认证后的应用 ACK。现有每日累计额度和 NVS 先提交后 ACK 规则不变。
+
 原 `ai_pet` 存档保持不动。新增 `ai_pet_v2` 使用 CRC 双槽，将旧宠物导入为 DEMO MEMORY，新玩法从蛋开始。家族可翻阅最近 12 条记录，更早的旧版记录仍在原存档。v2 双槽不可读时阻止写入，不静默重置进度。核对分区表后只更新 `0x10000` 应用区域；禁止全盘擦除，保留设备身份与 Recovery。
 
 USB 是受信任本地线缆协议，不是远程认证 API，使用[现有非阻塞控制台](https://docs.espressif.com/projects/esp-idf/en/release-v5.5/esp32c3/api-guides/stdio.html)：
@@ -57,4 +75,6 @@ PET2 SYNC YYYYMMDD <tokens_today> <daily_goal> <31 digits, each 0..5>
 
 运行 `./tools/validate.sh --static` 和[构建与测试](docs/development/build-and-test.zh_CN.md)中的真实 LVGL 测试。页面测试输出 PPM 截图，覆盖布局、进食、进化、睡眠、快速按键和退出。纯逻辑测试覆盖三天成长、十六天进化门槛、重放、补发、日期校验、跨月和旧存档导入。
 
-尚缺 BLE 同步、Bits 结算、独立 Flux 适配、可选物种、分支进化、相遇、音效和正式精灵素材。真机断电、电池续航和连续三天人工体验属于独立验收，主机模拟不能代替。
+无线伴侣另运行 `python3 tests/test_pet_wireless.py`（需要上述依赖），覆盖认证、篡改、方向隔离、旧序号、长度、私有配置和 ACK。固件端安全拒绝行为、真实无线 ACK 与无线开启后的内存必须另在设备验证。
+
+尚缺 Bits 结算、独立 Flux 适配、增量采集优化、可选物种、分支进化、相遇、音效和正式精灵素材。真机断电、电池续航和连续三天人工体验属于独立验收，主机模拟不能代替。无线常驻后与 Wi-Fi 扫描、96 KB 录音等硬件演示并发的完整资源验收未完成；日常使用 AI Pet / Pet Link 页面。

@@ -1,11 +1,14 @@
 #include "demo.h"
 #include "pet_service.h"
+#include "pet_ble.h"
 #include "lvgl.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
 static pet_snapshot_t snapshot;
+static pet_ble_status_t ble_status;
+void pet_ble_status(pet_ble_status_t *out) { *out = ble_status; }
 static uint16_t framebuffer[240 * 320];
 
 bool pet_service_snapshot(pet_snapshot_t *out) { *out = snapshot; return true; }
@@ -113,6 +116,11 @@ int main(void)
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("progress");
+    snapshot.synced_wirelessly = true;
+    snapshot.synced_at = lv_tick_get();
+    snapshot.revision++;
+    advance(200);
+    capture("wireless-progress");
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("family");
@@ -141,6 +149,25 @@ int main(void)
     capture("apex-happy");
     demo_pet_exit();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
+    lv_screen_load(lv_obj_create(NULL));
+    advance(3000);
+    demo_ble_enter();
+    advance(600);
+    capture("link-unpaired");
+    ble_status.paired = ble_status.ready = true;
+    strcpy(ble_status.id, "1234abcd");
+    advance(600);
+    capture("link-ready");
+    ble_status.connected = true;
+    advance(600);
+    capture("link-connected");
+    ble_status.authenticated = true;
+    advance(600);
+    capture("link-delivery");
+    ble_status.error = -123456789;
+    advance(600);
+    capture("link-error");
+    demo_ble_exit();
     lv_screen_load(lv_obj_create(NULL));
     advance(3000);
     puts("pet_page: PASS (real pages, label bounds, eating, evolution, sleep, browsing, repeated keys, teardown)");

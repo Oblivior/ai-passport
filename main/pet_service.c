@@ -1,6 +1,7 @@
 #include "pet_service.h"
 #include "pet_protocol.h"
 #include "pet_store.h"
+#include "pet_ble.h"
 #include "demo_radio.h"
 
 #include <stdio.h>
@@ -17,6 +18,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 
 typedef struct {
     uint32_t generation;
@@ -29,6 +31,7 @@ static QueueHandle_t s_actions;
 static pet_snapshot_t s_snapshot;
 static uint32_t s_generation;
 static bool s_storage_blocked;
+static bool s_wireless_request;
 static const char *const KEYS[] = {"slot0", "slot1"};
 
 static uint32_t checksum(const record_t *record)
@@ -106,15 +109,35 @@ static bool commit(pet_snapshot_t *state, const pet_life_t *next)
 
 static void reply(const pet_snapshot_t *state, const char *status)
 {
-    printf("\nPET2 %s date=%lu pending=%u meals=%u days=%u stage=%u goal=%llu archives=%u\n",
+    char line[PET_LINE_MAX];
+    snprintf(line, sizeof(line), "PET2 %s date=%lu pending=%u meals=%u days=%u stage=%u goal=%llu archives=%u",
         status, (unsigned long)state->life.date, pet_life_pending(&state->life),
         pet_life_meals(&state->life), pet_life_days(&state->life), state->life.stage,
         (unsigned long long)state->life.daily_goal, state->life.family.archive_count);
-    fflush(stdout);
+    if (s_wireless_request) pet_ble_reply(line);
+    else { printf("\n%s\n", line); fflush(stdout); }
 }
 
 static void handle_line(pet_snapshot_t *state, const char *line)
 {
+    if (!s_wireless_request && !strcmp(line, "PET2 LINK")) {
+        pet_ble_status_t ble;
+        pet_ble_status(&ble);
+        printf("\nPET2 LINK paired=%u ready=%u connected=%u auth=%u error=%d heap=%u largest=%u\n",
+            ble.paired, ble.ready, ble.connected, ble.authenticated, ble.error,
+            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        fflush(stdout);
+        return;
+    }
+    if (!s_wireless_request && !strncmp(line, "PET2 PAIR ", 10)) {
+        bool ok = pet_ble_pair(line + 10);
+        pet_ble_status_t ble;
+        pet_ble_status(&ble);
+        printf("\nPET2 %s id=%s\n", ok ? "PAIRED" : "PAIR_ERROR", ble.id);
+        fflush(stdout);
+        return;
+    }
     if (!strcmp(line, "PET2 STATUS")) {
         reply(state, state->storage_ok ? "STATUS" : "STORAGE_ERROR");
         return;
@@ -130,6 +153,7 @@ static void handle_line(pet_snapshot_t *state, const char *line)
         return;
     }
     state->synced_at = (uint32_t)(esp_timer_get_time() / 1000);
+    state->synced_wirelessly = s_wireless_request;
     publish(state);
     reply(state, "ACK"); /* ACK is sent only after persistent commit. */
 }
@@ -162,11 +186,18 @@ static void worker(void *arg)
         usb_serial_jtag_vfs_use_driver();
     }
     fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
+    pet_ble_init();
     char line[PET_LINE_MAX];
     size_t used = 0;
     bool discard = false;
     uint32_t last_byte = 0;
     for (;;) {
+        char wireless_line[PET_LINE_MAX];
+        if (pet_ble_receive(wireless_line, sizeof(wireless_line))) {
+            s_wireless_request = true;
+            handle_line(&state, wireless_line);
+            s_wireless_request = false;
+        }
         unsigned now = (unsigned)(esp_timer_get_time() / 1000);
         if (used && now - last_byte > 5000) { used = 0; discard = true; }
         uint8_t action;
