@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+- Add non-regressing monthly archive reconciliation through a trusted local
+  personal-data provider. Freeze the original goal, care days, branch and shared
+  allocation denominator; never credit current food or invent care days. Persist
+  high-water marks before acknowledging and show pending/completed status in the
+  family album. Explicitly migrate v3/v4 CRC records to v5, retaining the old
+  source slot and treating legacy archives as local-only. Verify retries, missing
+  coverage, shared caps, eviction, failed saves, protocol bounds and rendered UI.
+
 - Add opt-in, time-bounded nearby greetings using public ephemeral BLE scan
   responses and mutual on-device confirmation. Show both companions and pairing
   messages; cancel on page exit, timeout, identity change or computer connection.

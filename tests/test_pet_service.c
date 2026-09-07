@@ -165,5 +165,23 @@ int main(void)
     assert(!state.meeting.active && saves == before && bond_saves == previous_bond_saves);
     assert(!pet_service_meet(&shown, 0));
     handle_line(&state, "PET2 MEET"); assert(!strncmp(response, "PET2 REJECTED ", 14));
+    handle_line(&state, "PET2 MONTHS"); assert(!strcmp(response, "PET2 MONTHS months=none"));
+    handle_line(&state, "PET2 SYNC 20261007 0 2000 0000000000000000000000000000000");
+    assert(!strncmp(response, "PET2 ACK ", 9));
+    handle_line(&state, "PET2 MONTHS"); assert(!strcmp(response, "PET2 MONTHS months=202609"));
+    original = state.house; before = saves; state.synced_at = 0;
+    handle_line(&state, "PET2 SETTLE 202609 10000 20260929");
+    assert(!strncmp(response, "PET2 REJECTED ", 14) && saves == before);
+    fail_save = true;
+    handle_line(&state, "PET2 SETTLE 202609 10000 20260930");
+    assert(!strncmp(response, "PET2 STORAGE_ERROR ", 19) && !memcmp(&original, &state.house, sizeof(original)));
+    fail_save = false;
+    handle_line(&state, "PET2 SETTLE 202609 10000 20260930");
+    assert(!strcmp(response, "PET2 SETTLED month=202609") && state.storage_ok && !state.synced_at);
+    assert(!memcmp(&original.life, &state.house.life, sizeof(original.life)));
+    assert(state.house.months[0].status == PET_MONTH_SETTLED);
+    before = saves;
+    handle_line(&state, "PET2 SETTLE 202609 10000 20260930");
+    assert(!strcmp(response, "PET2 SETTLED month=202609") && saves == before && !state.synced_at);
     puts("pet_service: PASS (production transactions, commit-before-ACK, replay, failure preservation, stale UI actions)");
 }

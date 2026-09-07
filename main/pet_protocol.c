@@ -36,3 +36,20 @@ bool pet_protocol_parse(const char *line, pet_usage_t *usage)
     *usage = parsed;
     return true;
 }
+bool pet_protocol_settlement(const char *line, uint32_t *month, uint64_t *tokens, uint32_t *covered)
+{
+    if (!line || !month || !tokens || !covered || strlen(line) >= PET_LINE_MAX ||
+        strncmp(line, "PET2 SETTLE ", 12)) return false;
+    const char *p = line + 12;
+    uint64_t m, n;
+    uint32_t date = 0;
+    if (!number(&p, &m) || !number(&p, &n) || m < 200001 || m > 209912 ||
+        !pet_life_date_valid((uint32_t)m * 100 + 1) || n > 9007199254740991ULL || strlen(p) != 8) return false;
+    for (unsigned i = 0; i < 8; i++) {
+        if (p[i] < '0' || p[i] > '9') return false;
+        date = date * 10 + p[i] - '0';
+    }
+    if (!pet_life_date_valid(date)) return false;
+    *month = (uint32_t)m; *tokens = n; *covered = date;
+    return true;
+}

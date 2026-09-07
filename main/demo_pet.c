@@ -305,7 +305,8 @@ static void draw_archive(void)
     lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s\n%s  %u/%u", entry->year, entry->month,
         legacy ? pet_ui_legacy_stage_name(entry->stage) : pet_catalog_branch_form(record->species_id, entry->stage, record->branch),
         legacy ? pet_ui_route_name(entry->route) : pet_ui_stage_level(entry->stage),
-        legacy ? "试玩回忆" : "本地成长记录",
+        legacy ? "试玩回忆" : s_state.house.months[s_archive].status == PET_MONTH_PENDING ? "等待月度对账" :
+            s_state.house.months[s_archive].status == PET_MONTH_SETTLED ? "月度对账完成" : "本地成长记录",
         s_archive + 1, count);
     page_footer(count == 1 ? "仅此一只 · 确定返回" : "按确定：下一只伙伴");
 }

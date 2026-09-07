@@ -65,6 +65,18 @@ class WirelessTests(unittest.TestCase):
 
 
 class ExchangeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_monthly_retry_is_throttled_without_stopping_lunch(self):
+        import pet_settlement as s
+        from types import SimpleNamespace
+        args = SimpleNamespace(watch=True, interval=60, settlement_provider="/private/provider")
+        with patch.object(w, "sync_once", AsyncMock()) as lunch, \
+                patch.object(s, "reconcile", AsyncMock(side_effect=ValueError("source unavailable"))) as monthly, \
+                patch.object(w.asyncio, "sleep", AsyncMock(side_effect=[None, asyncio.CancelledError()])):
+            with self.assertRaises(asyncio.CancelledError):
+                await w.watch(args, bytes(32))
+        self.assertEqual(lunch.await_count, 2)
+        self.assertEqual(monthly.await_count, 1)
+
     async def test_connection_timeout_retries_with_bounded_backoff(self):
         result = (Mock(), bytes(16))
         with patch.object(w, "_connect_once", AsyncMock(side_effect=[TimeoutError(), asyncio.TimeoutError(), result])) as connect, \

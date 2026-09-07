@@ -52,6 +52,7 @@ esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *data, size_t 
     assert(handle == 1);
     unsigned at = !strcmp(key, "slot1");
     if (!sizes[at]) return ESP_ERR_NVS_NOT_FOUND;
+    if (!data) { *size = sizes[at]; return ESP_OK; }
     assert(*size >= sizes[at]);
     memcpy(data, slots[at], sizes[at]); *size = sizes[at]; return ESP_OK;
 }
@@ -168,9 +169,13 @@ int main(void)
     slots[loaded % 2][24] ^= 1;
     assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked);
     assert(!memcmp(&out, &cleaned, sizeof(out)));
-    /* In-place semantic v3->v4 migration: no food/partner/history edits. */
-    record_t v3 = {.generation = 123, .house = cleaned}; v3.house.version = 3;
-    v3.crc = checksum(&v3, offsetof(record_t, crc));
+    /* Exact legacy 640-byte fixture, not a v5 struct with a changed version. */
+    typedef struct { uint32_t generation, padding; uint8_t house[624]; uint32_t crc, tail; } old_record_t;
+    _Static_assert(sizeof(old_record_t) == 640, "legacy fixture ABI");
+    old_record_t v3 = {.generation = 123};
+    pet_house_t source_house = cleaned; source_house.version = 3;
+    memcpy(v3.house, &source_house, sizeof(v3.house));
+    v3.crc = checksum(&v3, offsetof(old_record_t, crc));
     memset(sizes, 0, sizeof(sizes));
     memcpy(slots[1], &v3, sizeof(v3)); sizes[1] = sizeof(v3);
     assert(pet_house_store_load(&out, &loaded) == 2 && loaded == 123);
@@ -184,9 +189,24 @@ int main(void)
     previous_writes = writes;
     assert(pet_house_store_boot(&out, &loaded, &blocked) && writes == previous_writes);
     /* A future valid schema must block fallback, even next to valid v3. */
-    record_t v5 = {.generation = 124, .house = cleaned}; v5.house.version = 5;
+    record_t v5 = {.generation = 124, .house = cleaned}; v5.house.version = PET_HOUSE_VERSION + 1;
     v5.crc = checksum(&v5, offsetof(record_t, crc));
     memcpy(slots[0], &v5, sizeof(v5)); sizes[0] = sizeof(v5);
+    assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked && writes == previous_writes);
+    /* v4 preserves branch choices and lifetime discoveries; no invented history. */
+    source_house = cleaned; source_house.version = 4;
+    source_house.branch_mask = 1; source_house.branch_seen_mask = 3;
+    v3.generation = 199;
+    memcpy(v3.house, &source_house, sizeof(v3.house));
+    v3.crc = checksum(&v3, offsetof(old_record_t, crc));
+    sizes[0] = 0; memcpy(slots[1], &v3, sizeof(v3)); sizes[1] = sizeof(v3);
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked && loaded == 200);
+    source_house.version = PET_HOUSE_VERSION;
+    assert(!memcmp(&source_house, &out, sizeof(out)));
+    assert(!memcmp(slots[1], &v3, sizeof(v3)));
+    previous_writes = writes;
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && writes == previous_writes);
+    sizes[1] = 1000; /* Unknown future record length must also block fallback. */
     assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked && writes == previous_writes);
     puts("pet_house_store: PASS (v1/v2/v3 migration, byte preservation, CRC slots, failed commits, future schema)");
 }

@@ -9,8 +9,15 @@ typedef struct {
     pet_house_t house;
     uint32_t crc;
 } house_record_t;
-_Static_assert(sizeof(pet_house_t) == 624, "Keep v3/v4 layout; migrate semantic fields explicitly");
-_Static_assert(sizeof(house_record_t) == 640, "Keep the on-flash record ABI stable");
+typedef struct {
+    uint32_t generation, padding;
+    uint8_t house[624];
+    uint32_t crc, tail_padding;
+} old_house_record_t;
+_Static_assert(offsetof(pet_house_t, months) == 624, "Preserve v3/v4 prefix");
+_Static_assert(sizeof(pet_month_record_t) == 24 && sizeof(pet_house_t) == 912, "v5 house ABI");
+_Static_assert(sizeof(house_record_t) == 928 && offsetof(house_record_t, house) == 8, "v5 record ABI");
+_Static_assert(sizeof(old_house_record_t) == 640, "v3/v4 record ABI");
 static const char *const KEYS[] = {"slot0", "slot1"};
 static uint32_t checksum_bytes(const void *data, size_t length)
 {
@@ -35,12 +42,26 @@ int pet_house_store_load(pet_house_t *house, uint32_t *generation)
     bool found = false, absent = true, incompatible = false, migrated = false;
     for (unsigned i = 0; i < 2; i++) {
         house_record_t record = {0};
-        size_t size = sizeof(record);
-        err = nvs_get_blob(handle, KEYS[i], &record, &size);
+        size_t size = 0;
+        err = nvs_get_blob(handle, KEYS[i], NULL, &size);
         if (err != ESP_ERR_NVS_NOT_FOUND) absent = false;
-        if (err != ESP_OK || size != sizeof(record) || record.crc != checksum(&record)) continue;
-        bool legacy = record.house.version == 3;
-        if (legacy ? !pet_house_upgrade_v3(&record.house) : !pet_house_valid(&record.house)) { incompatible = true; continue; }
+        if (err == ESP_ERR_NVS_NOT_FOUND) continue;
+        if (err != ESP_OK) { incompatible = true; continue; }
+        bool legacy = size == sizeof(old_house_record_t);
+        if (legacy) {
+            old_house_record_t old = {0};
+            if (nvs_get_blob(handle, KEYS[i], &old, &size) != ESP_OK) { incompatible = true; continue; }
+            if (size != sizeof(old) || old.crc != checksum_bytes(&old, offsetof(old_house_record_t, crc))) continue;
+            record.generation = old.generation;
+            memcpy(&record.house, old.house, sizeof(old.house));
+            if (!pet_house_upgrade_legacy(&record.house)) { incompatible = true; continue; }
+        } else {
+            /* Unknown lengths may be a future schema: never overwrite them. */
+            if (size != sizeof(record)) { incompatible = true; continue; }
+            if (nvs_get_blob(handle, KEYS[i], &record, &size) != ESP_OK) { incompatible = true; continue; }
+            if (size != sizeof(record) || record.crc != checksum(&record)) continue;
+            if (!pet_house_valid(&record.house)) { incompatible = true; continue; }
+        }
         if (!found || (int32_t)(record.generation - *generation) > 0) {
             *house = record.house;
             *generation = record.generation;

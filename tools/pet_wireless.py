@@ -141,9 +141,17 @@ async def sync_once(args, key):
 
 async def watch(args, key):
     from bleak.exc import BleakError
+    next_settlement = 0
     while True:
         try:
             await sync_once(args, key)
+            provider = getattr(args, "settlement_provider", None)
+            now = asyncio.get_running_loop().time()
+            if provider and now >= next_settlement:
+                # Retry missing data/corrections hourly, never on every lunch sync.
+                next_settlement = now + 3600
+                from pet_settlement import reconcile
+                await reconcile(provider, key)
         except (OSError, ValueError, TimeoutError, asyncio.TimeoutError, InvalidTag, BleakError, c.subprocess.TimeoutExpired) as exc:
             # Never print raw packet or key content.
             print("Wireless sync failed: " + (str(exc) or type(exc).__name__), flush=True)
@@ -165,6 +173,8 @@ def main():
     parser.add_argument("--cached-export", action="store_true",
                         help="use an exporter supporting isolated cached cumulative snapshots")
     parser.add_argument("--goal", type=int)
+    parser.add_argument("--settlement-provider", metavar="PATH",
+                        help="trusted local executable: YYYYMM argument -> personal monthly JSON; checked hourly")
     args = parser.parse_args()
     if args.interval < 60:
         parser.error("--interval must be at least 60 seconds")

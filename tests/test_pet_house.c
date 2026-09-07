@@ -44,7 +44,7 @@ static void branches(void)
     h = before; h.archive[0].species_id = PET_GABUMON; assert(!pet_house_valid(&h));
     h = before; h.archive[0].result.stage = 4; assert(!pet_house_valid(&h));
     pet_house_init(&h, NULL); h.version = 3; before = h;
-    assert(pet_house_upgrade_v3(&h)); before.version = 4;
+    assert(pet_house_upgrade_v3(&h)); before.version = PET_HOUSE_VERSION;
     assert(!memcmp(&h, &before, sizeof(h))); /* Migration changes version only. */
     h.version = 3; h.branch_mask = 1; before = h;
     assert(!pet_house_upgrade_v3(&h) && !memcmp(&h, &before, sizeof(h)));

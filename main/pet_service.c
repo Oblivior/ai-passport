@@ -116,6 +116,41 @@ static void handle_line(pet_snapshot_t *state, const char *line)
         reply(state, state->storage_ok ? "STATUS" : "STORAGE_ERROR");
         return;
     }
+    if (!strcmp(line, "PET2 MONTHS")) {
+        if (!state->storage_ok) { reply(state, "STORAGE_ERROR"); return; }
+        char response[PET_LINE_MAX] = "PET2 MONTHS months=";
+        uint32_t listed[PET_ARCHIVE_MAX] = {0};
+        unsigned count = 0;
+        for (unsigned i = 0; i < state->house.archive_count; i++) {
+            if (state->house.months[i].status == PET_MONTH_LEGACY) continue;
+            const pet_archive_entry_t *entry = &state->house.archive[i].result;
+            uint32_t month = entry->year * 100U + entry->month;
+            bool seen = false;
+            for (unsigned j = 0; j < count; j++) if (listed[j] == month) seen = true;
+            if (seen) continue;
+            size_t used = strlen(response);
+            snprintf(response + used, sizeof(response) - used, "%s%lu", count ? "," : "", (unsigned long)month);
+            listed[count++] = month;
+        }
+        if (!count) strcat(response, "none");
+        if (s_wireless_request) pet_ble_reply(response);
+        else { printf("\n%s\n", response); fflush(stdout); }
+        return;
+    }
+    if (!strncmp(line, "PET2 SETTLE ", 12)) {
+        uint32_t month, covered;
+        uint64_t tokens;
+        pet_house_t next = state->house;
+        if (!pet_protocol_settlement(line, &month, &tokens, &covered) ||
+            !pet_house_settle(&next, month, tokens, covered)) { reply(state, "REJECTED"); return; }
+        if (!commit(state, &next)) { reply(state, "STORAGE_ERROR"); return; }
+        char response[64];
+        snprintf(response, sizeof(response), "PET2 SETTLED month=%lu", (unsigned long)month);
+        if (s_wireless_request) pet_ble_reply(response);
+        else { printf("\n%s\n", response); fflush(stdout); }
+        /* A historical reconciliation must not make today's clock fresh. */
+        return;
+    }
     if (!strcmp(line, "PET2 ROUTE")) {
         char response[96];
         snprintf(response, sizeof(response), "PET2 ROUTE route=%u locked=%u stage=%u",

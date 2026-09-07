@@ -45,6 +45,10 @@ run_static_checks() {
         -o "${test_dir}/test_pet_house"
     "${test_dir}/test_pet_house"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_pet_settlement.c main/pet_house.c main/pet_catalog.c main/pet_life.c main/pet_model.c main/pet_protocol.c \
+        -o "${test_dir}/test_pet_settlement"
+    "${test_dir}/test_pet_settlement"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_pet_ui_progress.c main/pet_ui_text.c main/pet_catalog.c \
         -o "${test_dir}/test_pet_ui_progress"
     "${test_dir}/test_pet_ui_progress"
@@ -69,6 +73,7 @@ run_static_checks() {
         -o "${test_dir}/test_pet_service"
     "${test_dir}/test_pet_service"
     python3 tests/test_pet_companion.py
+    python3 tests/test_pet_settlement.py
     python3 tests/test_ui_fonts.py
     python3 tests/test_digimon_sprites.py
     python3 tests/test_verify_firmware.py

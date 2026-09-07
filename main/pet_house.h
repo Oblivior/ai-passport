@@ -2,7 +2,7 @@
 #include "pet_life.h"
 #include "pet_catalog.h"
 
-#define PET_HOUSE_VERSION 4U
+#define PET_HOUSE_VERSION 5U
 typedef struct {
     uint8_t adopted;
     uint8_t adopted_day;
@@ -14,6 +14,16 @@ typedef struct {
     uint8_t species_id; /* Zero preserves the original robot demo artwork. */
     uint8_t branch; /* 0 standard; 1 Agumon dark, only for stages 5/6. */
 } pet_house_archive_t;
+enum { PET_MONTH_LEGACY, PET_MONTH_PENDING, PET_MONTH_SETTLED };
+typedef struct {
+    uint64_t daily_goal; /* Frozen at rollover, never today's goal. */
+    uint64_t official_tokens; /* High-water mark; corrections cannot regress. */
+    uint16_t month_meals; /* All partners, including subsequently evicted rows. */
+    uint8_t care_days;
+    uint8_t chosen_branch;
+    uint8_t status;
+    uint8_t reserved[3];
+} pet_month_record_t;
 typedef struct {
     uint32_t version;
     pet_life_t life; /* Shared pantry only. Its stage is NOT a partner stage. */
@@ -23,6 +33,7 @@ typedef struct {
     uint8_t archive_count;
     uint8_t branch_mask; /* Monthly choice, bit (stable species ID - 1). */
     uint8_t branch_seen_mask; /* Lifetime dark forms: bit 0 skull, bit 1 black war. */
+    pet_month_record_t months[PET_ARCHIVE_MAX]; /* v5 extension after the v4 prefix. */
 } pet_house_t;
 
 void pet_house_init(pet_house_t *house, const pet_life_t *legacy);
@@ -42,5 +53,8 @@ unsigned pet_house_branch(const pet_house_t *house, unsigned id);
 bool pet_house_branch_choose(pet_house_t *house, unsigned expected_id, uint32_t expected_month,
                              unsigned branch, unsigned bond_points);
 bool pet_house_form_seen(const pet_house_t *house, unsigned id, unsigned stage, unsigned branch);
-/* Same 624-byte layout: upgrade only the version after validating v3 fields. */
+/* Legacy callers must zero the extension before copying the 624-byte prefix. */
 bool pet_house_upgrade_v3(pet_house_t *house);
+bool pet_house_upgrade_legacy(pet_house_t *house);
+/* Only archived, fully covered months. Preserves current food, days and pets. */
+bool pet_house_settle(pet_house_t *house, uint32_t month, uint64_t tokens, uint32_t covered_through);

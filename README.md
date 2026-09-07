@@ -233,7 +233,7 @@ not OS BLE bonding. Each connection has a fresh 16-byte challenge. Direction plu
 challenge forms the AAD; frames have a random 12-byte nonce and 16-byte tag.
 Plaintext contains a 4-byte big-endian increasing sequence followed by PET2 text.
 Wrong keys, tampering, cross-session or old-sequence replay cannot feed the pet.
-Only STATUS/ROUTE/SYNC are accepted; PAIR and LINK diagnostics are USB-only. Idle
+Only STATUS/ROUTE/SYNC/MONTHS/SETTLE are accepted; PAIR and LINK diagnostics are USB-only. Idle
 unauthenticated clients time out; a one-item queue and failure limit bound work.
 This does not prevent radio interference or sustained denial of service. Pairing
 files and device NVS are not encrypted at rest: physical access or local file access
@@ -246,18 +246,18 @@ response AAD is `PET3-S` plus challenge. Frame order: nonce, ciphertext, tag.
 A successful GATT write is not delivery: require the authenticated application
 ACK. Daily cumulative entitlements and commit-before-ACK remain unchanged.
 
-The historical `ai_pet_v3` namespace now stores version-4 states in alternating
-CRC-protected slots. The 624-byte layout is unchanged: previously reserved bytes
-hold the monthly branch choice, lifetime dark discoveries and archived branch.
-Validated v3 records migrate by changing only their version, committed once
-before allowing mutations. Failed migration blocks writes until reboot; unknown
+The historical `ai_pet_v3` namespace now stores version-5 states in alternating
+CRC-protected slots. v5 preserves the 624-byte v3/v4 prefix and appends twelve
+24-byte monthly records (912-byte state, 928-byte CRC record). Validated v3/v4
+records migrate once by updating the version and zeroing the extension; no
+historical goals or care days are guessed. Failed migration blocks writes until reboot; unknown
 versions or branch values fail closed. Legacy `ai_pet`, `ai_pet_v2`, bond and
 pairing namespaces are not rewritten by migration. Only absent house records
 allow importing v1/v2; unreadable or incompatible saves block
 writes instead of silently resetting. One corrupt slot can recover from the other;
 CRC-valid unknown species block downgrade. A failed commit keeps the live state
 unchanged. Family holds the latest 12 individual records, not 12 months.
-Older v3 firmware rejects CRC-valid v4 records. Do not downgrade just the app
+Older firmware cannot read v5 records and may resume a stale legacy slot. Do not downgrade just the app
 and expect it to read new saves; deliberate rollback requires the private backup.
 Downgrading to v2 resumes its old snapshot, not subsequent house progress; do not play
 on both versions and expect their diverging saves to merge. Back up before upgrade.
@@ -274,6 +274,8 @@ PET2 HOUSE
 PET2 BRANCH
 PET2 MEET
 PET2 BOND
+PET2 MONTHS
+PET2 SETTLE YYYYMM <monthly_tokens> YYYYMMDD
 PET2 SYNC YYYYMMDD <tokens_today> <daily_goal> <31 digits, each 0..5>
 ```
 
@@ -289,7 +291,44 @@ food remains shared. There are no remote commands to adopt, switch or eat.
 
 First sync in a later month archives every adopted partner, expires leftover
 food, preserves lifetime discoveries and asks you to choose a new egg. This is
-local rollover, not Bits settlement. Offline, the device waits for host time.
+local rollover, not official settlement. Offline, the device waits for host time.
+
+### Monthly archive reconciliation
+
+Family records created by v5 start as pending. Configure a trusted local personal
+statistics adapter with `--settlement-provider /absolute/path/to/provider` on
+`tools/pet_wireless.py --watch`; after lunch sync it checks archived months at most
+hourly. No provider is enabled by default. The executable receives one `YYYYMM`
+argument and emits one JSON object, for example with **synthetic** test values:
+
+```json
+{"schemaVersion":1,"scope":"personal","month":202608,"complete":true,"tokens":1000,"coveredThrough":"2026-08-31"}
+```
+
+Missing data returns `complete:false` (without inventing a token count). The adapter
+must validate the authenticated person, exact full-month metric and source coverage;
+keep company endpoints, identifiers, credentials and raw responses outside this
+public repository. This is a trusted-computer contract, not a platform signature.
+NA, partial coverage, current/future months and malformed counts never settle.
+The device also checks coverage against its last synced date. `MONTHS` lists only
+reconcilable retained months; migrated legacy archives remain local-only.
+
+At rollover, each partner retains actual care days, chosen branch, frozen daily
+goal and its original eaten meals. The monthly budget is
+`min(days_in_month * 5, ceil(monthly_tokens * 5 / frozen_daily_goal))`, divided
+proportionally by original meals eaten across **all** that month's partners,
+rounding each share down. The saved denominator survives archive eviction.
+Effective growth meals are the greater of local meals and that share; actual care
+days still gate evolution. Untouched eggs stay eggs. No new-month food, care days,
+bond or current partner stages are changed. Total use is not a measure of work
+quality and does not choose a dark route.
+
+Only archived forms and lifetime discoveries can advance. Lower corrections never
+undo progress, and duplicate receipts do not write flash. The family page shows
+pending/completed status. `SETTLE` runs over trusted USB or the existing authenticated
+BLE channel, with `PET2 SETTLED month=...` only after persistent commit. It does not
+refresh today's training clock. Test live rollover/late-data behavior separately
+from synthetic host tests; never fast-forward a real pet to simulate a month.
 
 ### Adding a line
 
@@ -318,7 +357,7 @@ and radio-enabled memory require separate device checks.
 ROUTE is read-only and returns `route`, `locked` and `stage`; route IDs are
 0=CORE (unformed), 1=ARMOR, 2=WILD, 3=EXPLORER. Existing STATUS/SYNC fields stay unchanged.
 
-Remaining: Bits settlement and certified feature-based routes, independent Flux
+Remaining: real calendar rollover/late-settlement acceptance, certified feature-based routes, independent Flux
 adapter, additional branch routes, two-badge encounter acceptance, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
