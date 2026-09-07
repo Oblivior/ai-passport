@@ -44,6 +44,10 @@ run_static_checks() {
         tests/test_pet_house.c main/pet_house.c main/pet_catalog.c main/pet_life.c main/pet_model.c \
         -o "${test_dir}/test_pet_house"
     "${test_dir}/test_pet_house"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_pet_ui_progress.c main/pet_ui_text.c main/pet_catalog.c \
+        -o "${test_dir}/test_pet_ui_progress"
+    "${test_dir}/test_pet_ui_progress"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain -Itests/nvs \
         tests/test_pet_house_store.c main/pet_house_store.c main/pet_house.c main/pet_catalog.c main/pet_life.c main/pet_model.c \
         -o "${test_dir}/test_pet_house_store"

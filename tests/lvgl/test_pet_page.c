@@ -4,6 +4,7 @@
 #include "lvgl.h"
 #include "src/misc/lv_text_private.h"
 #include "pet_ui_text.h"
+#include "ui_pixel.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -76,7 +77,9 @@ static void bounds(lv_obj_t *obj)
         lv_obj_t *parent = lv_obj_get_parent(obj);
         for (unsigned i = 0; i < lv_obj_get_child_count(parent); i++) {
             lv_obj_t *other = lv_obj_get_child(parent, i);
-            if (other == obj || !lv_obj_check_type(other, &lv_label_class)) continue;
+            bool pet = lv_obj_get_width(other) == 100 && lv_obj_get_height(other) == 94;
+            if (other == obj || (!lv_obj_check_type(other, &lv_label_class) &&
+                !lv_obj_check_type(other, &lv_bar_class) && !pet)) continue;
             lv_area_t b;
             lv_obj_get_coords(other, &b);
             assert(a.x2 < b.x1 || b.x2 < a.x1 || a.y2 < b.y1 || b.y2 < a.y1);
@@ -85,11 +88,21 @@ static void bounds(lv_obj_t *obj)
     for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++) bounds(lv_obj_get_child(obj, i));
 }
 
+static unsigned footer_count(lv_obj_t *obj)
+{
+    lv_area_t area;
+    lv_obj_get_coords(obj, &area);
+    unsigned count = lv_obj_check_type(obj, &lv_label_class) && area.y1 == 293 ? 1 : 0;
+    for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++) count += footer_count(lv_obj_get_child(obj, i));
+    return count;
+}
+
 static void capture(const char *name)
 {
     lv_obj_update_layout(lv_screen_active());
     lv_refr_now(NULL);
     bounds(lv_screen_active());
+    assert(footer_count(lv_screen_active()) == 1);
     char path[80];
     snprintf(path, sizeof(path), "pet-%s.ppm", name);
     FILE *file = fopen(path, "wb");
@@ -130,6 +143,93 @@ static void set_stage(unsigned id, unsigned stage)
     snapshot.revision++;
 }
 
+static lv_obj_t *find_bar(lv_obj_t *obj)
+{
+    if (lv_obj_check_type(obj, &lv_bar_class)) return obj;
+    for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++) {
+        lv_obj_t *found = find_bar(lv_obj_get_child(obj, i));
+        if (found) return found;
+    }
+    return NULL;
+}
+
+static void progress_values(unsigned meal_percent, unsigned day_percent)
+{
+    lv_obj_t *bar = find_bar(lv_screen_active());
+    assert(bar);
+    lv_obj_t *panel = lv_obj_get_parent(bar);
+    unsigned found = 0;
+    for (unsigned i = 0; i < lv_obj_get_child_count(panel); i++) {
+        lv_obj_t *child = lv_obj_get_child(panel, i);
+        if (!lv_obj_check_type(child, &lv_bar_class)) continue;
+        assert(lv_bar_get_value(child) == (int)(found ? day_percent : meal_percent));
+        found++;
+    }
+    assert(found == 2);
+}
+
+static void home_geometry(unsigned percent)
+{
+    lv_obj_update_layout(lv_screen_active());
+    lv_obj_t *bar = find_bar(lv_screen_active());
+    assert(bar && lv_bar_get_value(bar) == (int)percent);
+    lv_obj_t *panel = lv_obj_get_parent(bar), *pet = NULL;
+    for (unsigned i = 0; i < lv_obj_get_child_count(panel); i++) {
+        lv_obj_t *child = lv_obj_get_child(panel, i);
+        if (lv_obj_get_width(child) == 100 && lv_obj_get_height(child) == 94) pet = child;
+    }
+    assert(pet);
+    lv_area_t a;
+    lv_obj_get_coords(pet, &a);
+    for (unsigned i = 0; i < lv_obj_get_child_count(panel); i++) {
+        lv_obj_t *child = lv_obj_get_child(panel, i);
+        if (child == pet) continue;
+        lv_area_t b;
+        lv_obj_get_coords(child, &b);
+        assert(a.x2 < b.x1 || b.x2 < a.x1 || a.y2 < b.y1 || b.y2 < a.y1);
+    }
+}
+
+static void home_progress_scenarios(void)
+{
+    /* Match the user's food-rich, one-companion-day black-ball pet. */
+    set_stage(PET_AGUMON, PET_STAGE_SPARK);
+    pet_usage_t usage = {.date = 20260901, .daily_goal = 1000, .earned = {5}};
+    assert(pet_house_sync(&snapshot.house, &usage));
+    while (pet_house_eat(&snapshot.house)) {}
+    snapshot.revision++;
+    pet_house_t saved = snapshot.house;
+    lv_screen_load(lv_obj_create(NULL));
+    demo_pet_enter(); advance(1800);
+    capture("home-level-user");
+    assert(has_text(lv_screen_active(), "Lv.1"));
+    assert(has_text(lv_screen_active(), "进化 50%"));
+    assert(has_text(lv_screen_active(), "还差 1 天陪伴"));
+    home_geometry(50);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    for (unsigned i = 0; i < 10; i++) { advance(150); home_geometry(50); }
+    capture("home-level-happy");
+    advance(33000); capture("home-level-sleep"); home_geometry(50);
+    assert(!memcmp(&saved, &snapshot.house, sizeof(saved)));
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(300);
+    assert(!has_text(lv_screen_active(), "睡觉中，按确定唤醒"));
+    capture("home-footer-cleared");
+    demo_pet_exit();
+    for (unsigned id = PET_AGUMON; id <= PET_PATAMON; id++) {
+        for (unsigned stage = PET_STAGE_EGG; stage < PET_STAGE_COUNT; stage++) {
+            set_stage(id, stage);
+            saved = snapshot.house;
+            unsigned percent = pet_ui_progress(stage, pet_house_meals(&saved, id), pet_house_days(&saved, id)).percent;
+            lv_screen_load(lv_obj_create(NULL)); demo_pet_enter(); advance(300);
+            home_geometry(percent);
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+            for (unsigned i = 0; i < 10; i++) { advance(150); home_geometry(percent); }
+            assert(!memcmp(&saved, &snapshot.house, sizeof(saved)));
+            demo_pet_exit();
+        }
+    }
+}
+
 static void partner_scenarios(void)
 {
     set_stage(PET_AGUMON, PET_STAGE_SCOUT);
@@ -145,6 +245,7 @@ static void partner_scenarios(void)
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); /* Enter picker during eating. */
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(200);
     capture("partner-gabumon-new");
+    assert(has_text(lv_screen_active(), "加布兽 · 伙伴 2/3"));
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
     capture("partner-gabumon-confirm");
     assert(snapshot.house.active_id == PET_AGUMON);
@@ -253,6 +354,7 @@ int main(void)
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("lunch-empty");
+    assert(has_text(lv_screen_active(), "等待第一餐"));
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     pet_usage_t usage = {.date = 20260907, .daily_goal = 1000, .tokens_today = 300};
     usage.earned[6] = 2;
@@ -277,12 +379,16 @@ int main(void)
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     advance(300);
     capture("eating");
+    assert(has_text(lv_screen_active(), "Lv.0"));
+    assert(has_text(lv_screen_active(), "进化准备就绪！"));
     for (int i = 0; i < 20; i++) demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     assert(pet_life_meals(&snapshot.house.life) == 1);
     advance(1200);
     capture("evolving");
+    assert(has_text(lv_screen_active(), "Lv.0"));
     advance(3600);
     capture("spark");
+    assert(has_text(lv_screen_active(), "Lv.1"));
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     advance(5000);
     assert(pet_life_meals(&snapshot.house.life) == 2);
@@ -297,6 +403,7 @@ int main(void)
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("progress");
+    progress_values(66, 50);
     snapshot.synced_wirelessly = true;
     snapshot.synced_at = lv_tick_get();
     snapshot.revision++;
@@ -360,6 +467,9 @@ int main(void)
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(300);
         capture("zh-next-stage");
+        unsigned next = stage < PET_STAGE_APEX ? stage + 1 : PET_STAGE_APEX;
+        progress_values(pet_ui_target_percent(pet_house_meals(&snapshot.house, snapshot.house.active_id), pet_catalog_meals(next)),
+            pet_ui_target_percent(pet_house_days(&snapshot.house, snapshot.house.active_id), pet_catalog_days(next)));
         demo_pet_exit();
     }
     snapshot.storage_ok = false;
@@ -419,6 +529,7 @@ int main(void)
     capture("lunch-old-record");
     assert(has_text(lv_screen_active(), "上次的饭盒"));
     assert(has_text(lv_screen_active(), "另有旧饭 3 份，先吃旧饭"));
+    assert(has_text(lv_screen_active(), "下份还差 约4000.0亿"));
     snapshot.synced_at = lv_tick_get();
     snapshot.revision++;
     snapshot.house.life.tokens_today = 9007199254740991ULL;
@@ -427,17 +538,20 @@ int main(void)
     capture("lunch-full");
     assert(has_text(lv_screen_active(), "五份齐了，安心休息吧"));
     assert(has_text(lv_screen_active(), "今日饭盒"));
+    assert(has_text(lv_screen_active(), "约9007.1万亿 Token"));
     advance(602000); /* Freshness refresh is checked once per 1.5 seconds. */
     capture("lunch-stale");
     assert(has_text(lv_screen_active(), "上次的饭盒"));
     demo_pet_exit();
     partner_scenarios();
+    home_progress_scenarios();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
     lv_screen_load(lv_obj_create(NULL));
     advance(3000);
     demo_ble_enter();
     advance(600);
     capture("link-unpaired");
+    assert(has_text(lv_screen_active(), "长按确定：返回菜单"));
     ble_status.paired = ble_status.ready = true;
     strcpy(ble_status.id, "1234abcd");
     advance(600);

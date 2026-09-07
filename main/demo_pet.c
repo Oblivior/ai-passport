@@ -52,6 +52,37 @@ static lv_obj_t *label(lv_obj_t *parent, const char *text, int y, uint32_t color
     return obj;
 }
 
+static lv_obj_t *page_panel(void)
+{
+    return ui_pixel_panel_create(s_content, 7, 4, 216, 224, UI_PAPER);
+}
+
+static lv_obj_t *page_title(lv_obj_t *panel, const char *text)
+{
+    lv_obj_t *obj = label(panel, text, 0, UI_INK);
+    lv_obj_set_style_text_font(obj, &passport_zh_20, 0);
+    return obj;
+}
+
+static void page_footer(const char *text)
+{
+    /* Owned by s_content, so a page change also removes the previous hint. */
+    label(s_content, text, 242, UI_INK);
+}
+
+static void progress_bar(lv_obj_t *panel, int y, unsigned percent, uint32_t color)
+{
+    lv_obj_t *bar = lv_bar_create(panel);
+    lv_obj_set_pos(bar, 4, y);
+    lv_obj_set_size(bar, 186, 8);
+    lv_bar_set_range(bar, 0, 100);
+    lv_obj_set_style_radius(bar, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(UI_MUTED), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(color), LV_PART_INDICATOR);
+    lv_bar_set_value(bar, (int)percent, LV_ANIM_OFF);
+}
+
 static const char *home_hint(void)
 {
     if (!s_state.ready) return "正在醒来...";
@@ -66,56 +97,73 @@ static const char *home_hint(void)
     return "按确定：摸摸它";
 }
 
+static lv_obj_t *home_text(lv_obj_t *panel, const char *text, int x, int y, int width, uint32_t color)
+{
+    lv_obj_t *obj = label(panel, text, y, color);
+    lv_obj_set_width(obj, width);
+    lv_obj_set_align(obj, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_pos(obj, x, y);
+    return obj;
+}
+
 static void draw_home(void)
 {
-    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    lv_obj_t *panel = page_panel();
     if (!s_state.house.active_id) {
         label(panel, "这个月，和谁一起？", 20, UI_INK);
         label(panel, "挑一颗数码蛋\n\n开始新的冒险吧", 70, UI_SKY_DARK);
-        label(panel, !s_state.storage_ok ? "存档失败，请重试" : "按确定：挑选伙伴", 180, UI_INK);
+        page_footer(!s_state.storage_ok ? "存档失败，请重试" : "按确定：挑选伙伴");
         return;
     }
-    lv_obj_t *plate = ui_pixel_panel_create(panel, 11, 0, 174, 32, UI_YELLOW);
-    lv_obj_set_style_pad_all(plate, 0, 0);
-    lv_obj_set_style_border_width(plate, 2, 0);
     uint8_t stage = s_pose == PET_POSE_EVOLVE || s_pose == PET_POSE_EAT ? s_before_stage : active_stage();
-    lv_obj_t *name = ui_pixel_label(plate, active_form(stage), &passport_zh_20, UI_INK);
-    lv_obj_center(name);
-    s_pet = pet_view_create_digimon_pose(panel, s_state.house.active_id, stage, 49, 40, s_pose);
-    lv_obj_t *stats = label(panel, "", 140, UI_INK);
-    lv_label_set_text_fmt(stats, "饭盒 %u    陪伴 %u 天", pet_life_pending(&s_state.house.life), active_days());
+    page_title(panel, active_form(stage));
+    lv_obj_t *level = home_text(panel, "", 28, 28, 44, UI_INK);
+    lv_obj_set_style_bg_opa(level, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(level, lv_color_hex(UI_YELLOW), 0);
+    lv_label_set_text_fmt(level, "Lv.%u", (unsigned)stage);
+    home_text(panel, pet_ui_stage_level(stage), 78, 28, 88, UI_SKY_DARK);
+    /* Center the companion; even the happy pose's 8px rise clears its subtitle.
+     * Reserve the bottom band for growth, with the action hint outside the panel. */
+    s_pet = pet_view_create_digimon_pose(panel, s_state.house.active_id, stage, 47, 54, s_pose);
     unsigned pending = pet_life_pending(&s_state.house.life);
-    lv_obj_t *tray = lv_obj_create(panel);
-    lv_obj_set_size(tray, 112, 12);
-    lv_obj_align(tray, LV_ALIGN_TOP_MID, 0, 165);
-    lv_obj_set_style_pad_all(tray, 0, 0);
-    lv_obj_set_style_radius(tray, 2, 0);
-    lv_obj_set_style_border_width(tray, 2, 0);
-    lv_obj_set_style_border_color(tray, lv_color_hex(UI_INK), 0);
-    lv_obj_set_style_bg_color(tray, lv_color_hex(pending ? UI_ORANGE : UI_PAPER), 0);
-    lv_obj_remove_flag(tray, LV_OBJ_FLAG_SCROLLABLE);
-    label(panel, home_hint(), 180, pending ? UI_SKY_DARK : UI_INK);
+    lv_obj_t *food = home_text(panel, "", 112, 151, 78, UI_INK);
+    lv_obj_set_style_text_align(food, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_text_fmt(food, "饭盒 %u", pending);
+    pet_ui_progress_t progress = pet_ui_progress(stage, active_meals(), active_days());
+    lv_obj_t *caption = home_text(panel, "", 4, 151, 106, UI_INK);
+    lv_obj_set_style_text_align(caption, LV_TEXT_ALIGN_LEFT, 0);
+    if (progress.final_form) lv_label_set_text(caption, "成长完成");
+    else lv_label_set_text_fmt(caption, "进化 %u%%", progress.percent);
+    progress_bar(panel, 173, progress.percent, UI_SKY_DARK);
+    lv_obj_t *remaining = label(panel, "", 185, UI_SKY_DARK);
+    if (progress.final_form) lv_label_set_text(remaining, "月末收入家族图鉴");
+    else if (progress.meals_left && progress.days_left)
+        lv_label_set_text_fmt(remaining, "还差 %u 份饭 / %u 天", progress.meals_left, progress.days_left);
+    else if (progress.meals_left) lv_label_set_text_fmt(remaining, "还差 %u 份饭", progress.meals_left);
+    else if (progress.days_left) lv_label_set_text_fmt(remaining, "还差 %u 天陪伴", progress.days_left);
+    else lv_label_set_text(remaining, "进化准备就绪！");
+    page_footer(home_hint());
 }
 
 static void draw_lunch(void)
 {
-    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    lv_obj_t *panel = page_panel();
     const pet_life_t *life = &s_state.house.life;
     pet_lunch_t lunch = pet_lunch_read(life);
     bool recent = s_lunch_recent = sync_recent();
-    label(panel, recent ? "今日饭盒" : "上次的饭盒", 0, UI_INK);
+    page_title(panel, !lunch.available ? "等待第一餐" : recent ? "今日饭盒" : "上次的饭盒");
+    page_footer(!s_state.storage_ok ? "存档失败，请重试" : "按确定：回到伙伴身边");
     if (!lunch.available) {
         label(panel, "还没收到用量\n\n正常使用 AI 后\n连接电脑送来第一餐", 48, UI_SKY_DARK);
-        label(panel, "按确定：回到伙伴身边", 180, UI_INK);
         return;
     }
-    lv_obj_t *date = label(panel, "", 22, UI_SKY_DARK);
+    lv_obj_t *date = label(panel, "", 30, UI_SKY_DARK);
     lv_label_set_text_fmt(date, "%02lu-%02lu / %s", (unsigned long)(life->date / 100 % 100),
         (unsigned long)(life->date % 100), recent ? "同步快照" : "等待同步");
     for (unsigned i = 0; i < 5; i++) {
         bool eaten = i < lunch.eaten, earned = i < lunch.earned;
         lv_obj_t *slot = lv_obj_create(panel);
-        lv_obj_set_pos(slot, 3 + (int)i * 38, 45);
+        lv_obj_set_pos(slot, 3 + (int)i * 38, 58);
         lv_obj_set_size(slot, 34, 31);
         lv_obj_remove_flag(slot, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_radius(slot, 0, 0);
@@ -126,114 +174,114 @@ static void draw_lunch(void)
         lv_obj_t *state = ui_pixel_label(slot, eaten ? "饱" : earned ? "饭" : "·", &passport_zh_14, UI_INK);
         lv_obj_center(state);
     }
-    lv_obj_t *counts = label(panel, "", 81, UI_INK);
+    lv_obj_t *counts = label(panel, "", 99, UI_INK);
     lv_label_set_text_fmt(counts, "本日 %u/5 份 · 已吃 %u", lunch.earned, lunch.eaten);
-    /* Use libc for 64-bit values; do not depend on LVGL's optional formatter. */
-    char text[80];
-    snprintf(text, sizeof(text), "%llu Token", (unsigned long long)life->tokens_today);
-    label(panel, text, 102, UI_SKY_DARK);
+    char text[80], number[40];
+    pet_ui_format_tokens(number, sizeof(number), life->tokens_today);
+    snprintf(text, sizeof(text), "%s Token", number);
+    label(panel, text, 125, UI_SKY_DARK);
     if (lunch.earned == 5) snprintf(text, sizeof(text), "五份齐了，安心休息吧");
     else if (!lunch.remaining_tokens) snprintf(text, sizeof(text), "等待下一轮食物同步");
-    else snprintf(text, sizeof(text), "下份还差 %llu", (unsigned long long)lunch.remaining_tokens);
-    label(panel, text, 123, UI_INK);
-    lv_obj_t *bar = lv_bar_create(panel);
-    lv_obj_set_pos(bar, 3, 145);
-    lv_obj_set_size(bar, 186, 8);
-    lv_obj_set_style_radius(bar, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(bar, 0, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(UI_MUTED), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(UI_ORANGE), LV_PART_INDICATOR);
-    lv_bar_set_value(bar, (int)lunch.progress, LV_ANIM_OFF);
-    lv_obj_t *older = label(panel, "", 158, UI_SKY_DARK);
+    else {
+        pet_ui_format_tokens(number, sizeof(number), lunch.remaining_tokens);
+        snprintf(text, sizeof(text), "下份还差 %s", number);
+    }
+    label(panel, text, 151, UI_INK);
+    progress_bar(panel, 176, lunch.progress, UI_ORANGE);
+    lv_obj_t *older = label(panel, "", 185, UI_SKY_DARK);
     if (lunch.older_pending) lv_label_set_text_fmt(older, "另有旧饭 %u 份，先吃旧饭", lunch.older_pending);
     else lv_label_set_text(older, "食物按来源日期记录");
-    label(panel, !s_state.storage_ok ? "存档失败，请重试" : "按确定：回到伙伴身边", 180, UI_INK);
 }
 
 static void draw_progress(void)
 {
-    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, active_stage() == PET_STAGE_APEX ? "最终形态" : "下次进化", 0, UI_INK);
+    lv_obj_t *panel = page_panel();
+    page_title(panel, active_stage() == PET_STAGE_APEX ? "最终形态" : "下次进化");
     const pet_life_t *life = &s_state.house.life;
     unsigned next = active_stage() < PET_STAGE_APEX ? active_stage() + 1 : PET_STAGE_APEX;
-    label(panel, active_form(next), 25, UI_SKY_DARK);
-    lv_obj_t *stats = label(panel, "", 55, UI_INK);
-    lv_label_set_text_fmt(stats, "已吃 %u / %u 份\n\n陪伴 %u / %u 天",
-        active_meals(), pet_catalog_meals(next), active_days(), pet_catalog_days(next));
-    lv_obj_t *date = label(panel, "", 123, UI_SKY_DARK);
-    if (life->date) lv_label_set_text_fmt(date, "%04lu-%02lu-%02lu\nKaboo / 本地统计",
+    label(panel, active_form(next), 30, UI_SKY_DARK);
+    lv_obj_t *meals = label(panel, "", 62, UI_INK);
+    lv_label_set_text_fmt(meals, "已吃 %u / %u 份", active_meals(), pet_catalog_meals(next));
+    progress_bar(panel, 87, pet_ui_target_percent(active_meals(), pet_catalog_meals(next)), UI_ORANGE);
+    lv_obj_t *days = label(panel, "", 107, UI_INK);
+    lv_label_set_text_fmt(days, "陪伴 %u / %u 天", active_days(), pet_catalog_days(next));
+    progress_bar(panel, 132, pet_ui_target_percent(active_days(), pet_catalog_days(next)), UI_SKY_DARK);
+    lv_obj_t *date = label(panel, "", 153, UI_SKY_DARK);
+    if (life->date) lv_label_set_text_fmt(date, "%04lu-%02lu-%02lu · 本地",
         (unsigned long)(life->date / 10000), (unsigned long)(life->date / 100 % 100), (unsigned long)(life->date % 100));
     else lv_label_set_text(date, "等待首次同步");
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
     label(panel, !s_state.synced_at || now - s_state.synced_at > 600000U ? "等待用量同步" :
-        (s_state.synced_wirelessly ? "无线同步成功" : "USB 同步成功"), 160, UI_INK);
-    label(panel, "休息不掉成长值", 180, UI_SKY_DARK);
+        (s_state.synced_wirelessly ? "无线同步成功" : "USB 同步成功"), 180, UI_INK);
+    page_footer("上下翻页 · 休息不掉级");
 }
 
 static void draw_lineage(void)
 {
-    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    lv_obj_t *panel = page_panel();
     pet_stage_t stage = (pet_stage_t)s_form_preview;
     const pet_species_info_t *species = pet_catalog_find(s_state.house.active_id);
-    lv_obj_t *title = label(panel, "", 0, UI_INK);
+    lv_obj_t *title = page_title(panel, "");
     lv_label_set_text_fmt(title, "%s进化图鉴", species ? species->name : "伙伴");
-    label(panel, active_form(stage), 22, UI_SKY_DARK);
-    pet_view_create_digimon_pose(panel, s_state.house.active_id, stage, 49, 42, PET_POSE_IDLE);
-    lv_obj_t *level = label(panel, "", 140, UI_INK);
-    lv_label_set_text_fmt(level, "%s · %u/7", pet_ui_stage_level(stage), s_form_preview + 1);
+    label(panel, active_form(stage), 30, UI_SKY_DARK);
+    pet_view_create_digimon_pose(panel, s_state.house.active_id, stage, 47, 54, PET_POSE_IDLE);
+    lv_obj_t *level = label(panel, "", 153, UI_INK);
+    lv_label_set_text_fmt(level, "%s · 形态 %u/7", pet_ui_stage_level(stage), s_form_preview + 1);
     const pet_partner_t *pet = pet_house_partner(&s_state.house, s_state.house.active_id);
-    label(panel, pet && stage < pet->highest_plus_one ? "已经养成 · 已解锁" : "未来形态预览", 158, UI_SKY_DARK);
-    label(panel, "按确定：下一种形态", 180, UI_INK);
+    label(panel, pet && stage < pet->highest_plus_one ? "已经养成 · 已解锁" : "未来形态预览", 185, UI_SKY_DARK);
+    page_footer("按确定：下一种形态");
 }
 
 static void draw_partners(void)
 {
-    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, s_confirming ? "就选这位伙伴？" : "伙伴之家", 0, UI_INK);
+    lv_obj_t *panel = page_panel();
+    page_title(panel, s_confirming ? "就选这位伙伴？" : "伙伴之家");
     if (s_partner_cursor == PET_CATALOG_COUNT) {
         label(panel, "先回去陪陪它吧", 78, UI_SKY_DARK);
-        label(panel, "按确定：返回", 180, UI_INK);
+        page_footer("上下挑选 · 确定返回");
         return;
     }
     const pet_species_info_t *species = pet_catalog_at(s_partner_cursor);
     const pet_partner_t *pet = pet_house_partner(&s_state.house, species->id);
     unsigned stage = pet->adopted ? pet_house_stage(&s_state.house, species->id) : PET_STAGE_SCOUT;
-    label(panel, species->name, 22, UI_SKY_DARK);
-    pet_view_create_digimon_pose(panel, species->id, stage, 49, 40,
+    lv_obj_t *position = label(panel, "", 30, UI_SKY_DARK);
+    lv_label_set_text_fmt(position, "%s · 伙伴 %u/%u", species->name, s_partner_cursor + 1, PET_CATALOG_COUNT);
+    pet_view_create_digimon_pose(panel, species->id, stage, 47, 54,
         pet->adopted && species->id != s_state.house.active_id ? PET_POSE_SLEEP : PET_POSE_IDLE);
-    lv_obj_t *status = label(panel, "", 138, UI_INK);
+    lv_obj_t *status = label(panel, "", 153, UI_INK);
     if (pet->adopted) lv_label_set_text_fmt(status, "%s · 陪伴 %u 天",
         species->id == s_state.house.active_id ? "在你身边" : "在家休息", pet_house_days(&s_state.house, species->id));
     else lv_label_set_text(status, "尚未领养 · 从数码蛋开始");
-    if (!s_state.storage_ok) label(panel, "存档失败，请重试", 158, UI_RED);
+    if (!s_state.storage_ok) label(panel, "存档失败，请重试", 185, UI_RED);
     else label(panel, s_confirming ? (pet->adopted ? "成长保留，继续陪伴" : "共用饭盒，不额外领饭") :
-        s_selecting ? "上下挑选 · 确定选择" : "按确定：挑选或换伙伴", 158, UI_SKY_DARK);
-    label(panel, s_choose_requested ? "正在保存..." : s_confirming ? "确定带走 · 上下取消" :
-        s_selecting ? "最后一项可以返回" : "上下翻页 · 饭盒大家共享", 180, UI_INK);
+        "饭盒共享 · 成长各自保留", 185, UI_SKY_DARK);
+    page_footer(s_choose_requested ? "正在保存..." : s_confirming ? "确定带走 · 上下取消" :
+        s_selecting ? "上下挑选 · 确定选择" : "按确定：挑选或换伙伴");
 }
 
 static void draw_archive(void)
 {
-    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, "我的家族图鉴", 0, UI_INK);
+    lv_obj_t *panel = page_panel();
+    page_title(panel, "我的家族图鉴");
     unsigned count = s_state.house.archive_count;
     if (!count) {
         label(panel, "第一只伙伴\n还在慢慢长大\n\n下个月来翻翻图鉴吧", 60, UI_SKY_DARK);
+        page_footer("上下翻页");
         return;
     }
     s_archive %= count;
     const pet_house_archive_t *record = &s_state.house.archive[s_archive];
     const pet_archive_entry_t *entry = &record->result;
     bool legacy = !record->species_id;
-    if (legacy) pet_view_create_route_pose(panel, entry->stage, entry->route, 49, 28, PET_POSE_IDLE);
-    else pet_view_create_digimon_pose(panel, record->species_id, entry->stage, 49, 28, PET_POSE_IDLE);
-    lv_obj_t *details = label(panel, "", 126, UI_INK);
+    if (legacy) pet_view_create_route_pose(panel, entry->stage, entry->route, 47, 34, PET_POSE_IDLE);
+    else pet_view_create_digimon_pose(panel, record->species_id, entry->stage, 47, 34, PET_POSE_IDLE);
+    lv_obj_t *details = label(panel, "", 138, UI_INK);
     lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s\n%s  %u/%u", entry->year, entry->month,
         legacy ? pet_ui_legacy_stage_name(entry->stage) : pet_catalog_form(record->species_id, entry->stage),
         legacy ? pet_ui_route_name(entry->route) : pet_ui_stage_level(entry->stage),
         legacy ? "试玩回忆" : "本地成长记录",
         s_archive + 1, count);
-    label(panel, "按确定：下一只伙伴", 180, UI_SKY_DARK);
+    page_footer("按确定：下一只伙伴");
 }
 
 static void draw_page(void)
@@ -349,7 +397,7 @@ void demo_pet_enter(void)
     s_content = lv_obj_create(s_scr);
     lv_obj_remove_flag(s_content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(s_content, 5, 51);
-    lv_obj_set_size(s_content, 230, 232);
+    lv_obj_set_size(s_content, 230, 260);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_content, 0, 0);
     lv_obj_set_style_pad_all(s_content, 0, 0);

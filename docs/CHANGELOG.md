@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+- Align companion-page titles and grass-footer actions, show separate food/day
+  evolution bars, label catalog form positions and partner selection positions,
+  and add empty-archive navigation and wireless-page return hints. Compact large
+  Token counts with explicit approximate units while retaining exact sync data.
+  Preserve controls and saves; test numeric boundaries, bar values, footer cleanup,
+  glyph coverage and label/character/bar separation on real LVGL.
+
+- Center the home-screen companion, pair its phase with a compact Lv.0–Lv.6
+  badge, and group pantry and growth below it. Keep the action hint on the grass
+  footer and detailed companion-day totals on the progress page. Replace the
+  decorative tray with next-form requirement progress
+  (the lesser of capped food/day target completion), remaining requirements and
+  an explicit final-form state. Preserve growth rules, saves and animation timing.
+
 - Add complete Agumon, Gabumon and Patamon lines, confirmed egg adoption and a
   partner house. Preserve individual growth while sharing the daily pantry;
   prevent historical food from granting pre-adoption days. Keep lifetime catalog

@@ -29,11 +29,15 @@ void demo_ble_enter(void)
     lv_obj_set_pos(s_battery, 169, 29);
     lv_obj_set_width(s_battery, 65);
     lv_obj_set_style_text_align(s_battery, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_t *panel = ui_pixel_panel_create(s_scr, 12, 60, 216, 213, UI_PAPER);
+    lv_obj_t *panel = ui_pixel_panel_create(s_scr, 12, 55, 216, 224, UI_PAPER);
     s_status = ui_pixel_label(panel, "正在启动...", &passport_zh_14, UI_INK);
     lv_obj_set_width(s_status, 192);
     lv_obj_set_style_text_align(s_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(s_status);
+    lv_obj_t *hint = ui_pixel_label(s_scr, "长按确定：返回菜单", &passport_zh_14, UI_INK);
+    lv_obj_set_width(hint, 192);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 293);
     s_timer = lv_timer_create(tick, 500, NULL);
     tick(NULL);
     lv_screen_load(s_scr);
