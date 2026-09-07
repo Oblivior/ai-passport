@@ -55,6 +55,16 @@ CI calls the same script. Fix the shared script or environment if local and CI b
 
 Hardware-affecting changes must also run the applicable on-device checklist in the hardware guide. Report compilation separately from physical-device validation.
 
+For pet animation changes, also run the headless regression against an LVGL
+9.5.0 checkout (matching `dependencies.lock`). It exercises creation before
+layout, interrupted jumps, and deletion across all seven stages:
+
+```bash
+cmake -S tests/lvgl -B build/pet-view-tests -DLVGL_SOURCE_DIR=/absolute/path/to/lvgl-9.5.0
+cmake --build build/pet-view-tests --parallel
+ctest --test-dir build/pet-view-tests --output-on-failure
+```
+
 Never upload the app-only `build/FoloToy-AI-Passport.bin` to the community. Only
 the validated `build/FoloToy-AI-Passport-full.bin` contains the structure the
 mini-program can inspect and transform safely.

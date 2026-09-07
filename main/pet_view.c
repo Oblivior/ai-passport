@@ -81,19 +81,22 @@ lv_obj_t *pet_view_create(lv_obj_t *parent, pet_stage_t stage, int x, int y)
 
 static void bounce_y(void *obj, int32_t value)
 {
-    lv_obj_set_y((lv_obj_t *)obj, value);
+    lv_obj_set_style_translate_y((lv_obj_t *)obj, value, 0);
 }
 
 void pet_view_bounce(lv_obj_t *pet)
 {
     if (!pet) return;
-    int y = lv_obj_get_y(pet);
     lv_anim_delete(pet, bounce_y);
+    /* A newly created object's computed coordinates are stale until layout.
+     * Animate a relative offset, never overwrite its declared position.
+     * Resetting the offset also prevents interrupted jumps accumulating drift. */
+    lv_obj_set_style_translate_y(pet, 0, 0);
     lv_anim_t anim;
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, pet);
     lv_anim_set_exec_cb(&anim, bounce_y);
-    lv_anim_set_values(&anim, y, y - 8);
+    lv_anim_set_values(&anim, 0, -8);
     lv_anim_set_duration(&anim, 120);
     lv_anim_set_playback_duration(&anim, 170);
     lv_anim_set_path_cb(&anim, lv_anim_path_step);

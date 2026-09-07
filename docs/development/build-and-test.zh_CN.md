@@ -52,5 +52,14 @@ cc -std=c11 -Wall -Wextra -Werror -Imain \
 
 涉及物理外设的改动必须在真机运行硬件指南验收清单，并把“编译通过”与“硬件验证通过”分开记录。
 
+修改宠物动画时，还须使用与 `dependencies.lock` 一致的 LVGL 9.5.0 源码运行无屏幕
+回归测试，覆盖全部 7 个阶段的布局前启动动画、连续中断跳跃与对象删除：
+
+```bash
+cmake -S tests/lvgl -B build/pet-view-tests -DLVGL_SOURCE_DIR=/absolute/path/to/lvgl-9.5.0
+cmake --build build/pet-view-tests --parallel
+ctest --test-dir build/pet-view-tests --output-on-failure
+```
+
 社区只能上传验证通过的 `build/FoloToy-AI-Passport-full.bin`，不得上传应用单镜像
 `build/FoloToy-AI-Passport.bin`，后者没有小程序可安全解析与转换的完整结构。

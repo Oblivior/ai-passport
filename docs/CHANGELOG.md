@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- Fixed feeding animations reading unresolved LVGL coordinates and moving the
+  pet over its title. Jumps now use a relative offset and cannot accumulate
+  position drift when interrupted. Added real LVGL 9.5.0 regression coverage.
 - Separated the pet stage title from the animated character into a fixed pixel
   plate and simplified the battery readout to prevent overlap on the 240x320
   display.
