@@ -38,6 +38,10 @@ python3 tools/pet_companion.py --port /dev/cu.usbmodem101
 python3 tools/pet_companion.py --port /dev/cu.usbmodem101 --watch
 ```
 
+Watch mode keeps the serial connection open and retries after disconnection.
+Startup retries use a read-only handshake. The first connection may return to
+the main menu; subsequent syncs should not repeatedly reboot the device.
+
 Default: one sync. `--watch`: every 300 seconds while the process runs, not an
 auto-start service. Stop it before flashing. `--csv path/to/export.csv` reads an
 explicit export instead. Never commit real exports.

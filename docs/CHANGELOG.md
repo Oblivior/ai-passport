@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- Initialize the ESP-IDF USB receive driver for food sync; keep the companion's
+  serial connection open between watch cycles and retry startup handshakes.
+
 - Replaced unlimited test feeding with a Kaboo-local USB lunchbox, food and
   active-day evolution gates, animated moods, next-stage requirements and
   browsable family records. Added cumulative sync, local calendar rollover and

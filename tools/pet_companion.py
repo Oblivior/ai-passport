@@ -106,7 +106,7 @@ def exchange(port, line, expected):
     raise TimeoutError("device did not acknowledge; retry is safe")
 
 
-def sync_once(args):
+def sync_once(args, port=None):
     totals = load_source(args)
     today = dt.datetime.now(ZONE).date()
     goal = args.goal or choose_goal(totals, today)
@@ -117,13 +117,10 @@ def sync_once(args):
                           "active_history_days": sum(v > 0 for d, v in totals.items() if d < today)},
                          ensure_ascii=False))
         return
-    import serial  # Optional for pure aggregation/tests/preview.
-    port = serial.Serial(port=None, baudrate=115200, timeout=0.3, write_timeout=3)
-    port.dtr = False
-    port.rts = False
-    port.port = args.port
+    owned = port is None
+    if owned:
+        port = open_port(args.port)
     try:
-        port.open()
         state = exchange(port, "PET2 STATUS", "STATUS")
         if int(state["date"]) // 100 == int(today.strftime("%Y%m")):
             goal = int(state["goal"])
@@ -132,7 +129,31 @@ def sync_once(args):
         reply = exchange(port, make_snapshot(totals, today, goal), "ACK")
         print(json.dumps({"source": "kaboo-local", "date": str(today), "device": reply}, ensure_ascii=False))
     finally:
+        if owned:
+            port.close()
+
+
+def open_port(path):
+    import serial  # Optional for pure aggregation/tests/preview.
+    port = serial.Serial(port=None, baudrate=115200, timeout=0.3, write_timeout=3)
+    # The C3 USB control lines are not conventional UART flow control. Keeping
+    # DTR asserted avoids the reset observed with both lines deasserted on macOS.
+    port.dtr = True
+    port.rts = False
+    port.port = path
+    try:
+        port.open()
+        # A reconnect may overlap boot. Retry the read-only handshake, never eat.
+        for attempt in range(2):
+            try:
+                exchange(port, "PET2 STATUS", "STATUS")
+                return port
+            except TimeoutError:
+                if attempt:
+                    raise
+    except BaseException:
         port.close()
+        raise
 
 
 def main():
@@ -149,16 +170,28 @@ def main():
         parser.error("--port is required for device writes")
     if args.interval < 60:
         parser.error("--interval must be at least 60 seconds")
-    while True:
-        try:
-            sync_once(args)
-        except (ValueError, OSError, subprocess.TimeoutExpired, TimeoutError) as exc:
-            print(str(exc), flush=True)
+    port = None
+    try:
+        while True:
+            try:
+                # Keep one connection across watch cycles; repeated opens can
+                # toggle USB reset lines and interrupt the pet screen.
+                if not args.preview and args.watch and port is None:
+                    port = open_port(args.port)
+                sync_once(args, port)
+            except (ValueError, OSError, subprocess.TimeoutExpired, TimeoutError) as exc:
+                print(str(exc), flush=True)
+                if isinstance(exc, (OSError, TimeoutError)) and port is not None:
+                    port.close()
+                    port = None
+                if not args.watch:
+                    raise SystemExit(1) from None
             if not args.watch:
-                raise SystemExit(1) from None
-        if not args.watch:
-            break
-        time.sleep(args.interval)
+                break
+            time.sleep(args.interval)
+    finally:
+        if port is not None:
+            port.close()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import datetime as dt
 import importlib.util
 import unittest
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("companion", Path(__file__).resolve().parents[1] / "tools/pet_companion.py")
@@ -43,6 +44,41 @@ class CompanionTests(unittest.TestCase):
     def test_february(self):
         line = c.make_snapshot({}, dt.date(2026, 2, 28), 100)
         self.assertTrue(line.endswith("0" * 31))
+
+    def test_usb_handshake_retries_without_reset_lines(self):
+        port = Mock()
+        serial = Mock()
+        serial.Serial.return_value = port
+        with patch.dict("sys.modules", {"serial": serial}), patch.object(
+                c, "exchange", side_effect=[TimeoutError(), {"date": "0"}]) as exchange:
+            self.assertIs(c.open_port("test-port"), port)
+        self.assertTrue(port.dtr)
+        self.assertFalse(port.rts)
+        self.assertEqual(exchange.call_count, 2)
+        port.open.assert_called_once()
+        port.close.assert_not_called()
+
+    def test_usb_failed_handshake_closes_port(self):
+        port = Mock()
+        serial = Mock()
+        serial.Serial.return_value = port
+        with patch.dict("sys.modules", {"serial": serial}), patch.object(
+                c, "exchange", side_effect=TimeoutError()):
+            with self.assertRaises(TimeoutError):
+                c.open_port("test-port")
+        port.close.assert_called_once()
+
+    def test_sync_reuses_connection_and_locked_goal(self):
+        args = Mock(preview=False, goal=None)
+        port = Mock()
+        today = dt.datetime.now(c.ZONE).date()
+        status = {"date": today.strftime("%Y%m%d"), "goal": "100"}
+        with patch.object(c, "load_source", return_value={today: 20}), patch.object(
+                c, "exchange", side_effect=[status, status]) as exchange, patch("builtins.print"):
+            c.sync_once(args, port)
+        self.assertEqual(exchange.call_args.args[1], c.make_snapshot({today: 20}, today, 100))
+        port.open.assert_not_called()
+        port.close.assert_not_called()
 
 
 if __name__ == "__main__":

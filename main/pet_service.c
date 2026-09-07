@@ -14,6 +14,9 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "nvs.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
+#include "esp_log.h"
 
 typedef struct {
     uint32_t generation;
@@ -147,6 +150,17 @@ static void worker(void *arg)
     state.ready = true;
     state.revision = 1;
     publish(&state);
+    /* IDF 5.5 VFS nonblocking reads use the driver's RX ring buffer. The
+     * default polling console is enough for logs, but not O_NONBLOCK RX. */
+    usb_serial_jtag_driver_config_t usb = {
+        .rx_buffer_size = 512,
+        .tx_buffer_size = 512,
+    };
+    if (!usb_serial_jtag_is_driver_installed() && usb_serial_jtag_driver_install(&usb) != ESP_OK) {
+        ESP_LOGE("pet_life", "USB sync unavailable: driver initialization failed");
+    } else {
+        usb_serial_jtag_vfs_use_driver();
+    }
     fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
     char line[PET_LINE_MAX];
     size_t used = 0;
