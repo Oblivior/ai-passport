@@ -249,7 +249,7 @@ bool pet_ble_receive(char *line, size_t capacity)
     for (unsigned i = 4; valid && i < size; i++) valid = plain[i] >= 32 && plain[i] <= 126;
     if (valid) {
         memcpy(line, plain + 4, size - 4); line[size - 4] = 0;
-        valid = !strcmp(line, "PET2 STATUS") || !strncmp(line, "PET2 SYNC ", 10);
+        valid = !strcmp(line, "PET2 STATUS") || !strcmp(line, "PET2 ROUTE") || !strncmp(line, "PET2 SYNC ", 10);
     }
     if (!valid) {
         s_pending = false;

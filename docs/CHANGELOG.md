@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- Add three local food-intensity evolution routes, a read-only final-form preview
+  page, route-specific bodies and archived route identity. Lock at RANGER without
+  changing v2 save layout, growth limits or existing STATUS/SYNC. Add authenticated
+  read-only ROUTE diagnostics; Bits-certified routes remain separate future work.
+
 - Retry cold BLE discovery/connection timeouts up to three times with bounded
   backoff, and handle Python 3.9 asyncio timeouts without stopping watch mode.
   Identity and authentication failures remain fail-closed.

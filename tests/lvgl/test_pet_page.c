@@ -123,6 +123,17 @@ int main(void)
     capture("wireless-progress");
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
+    capture("route-pending");
+    pet_life_t before_preview = snapshot.life;
+    const char *preview_names[] = {"route-armor", "route-wild", "route-explorer", "route-current"};
+    for (unsigned i = 0; i < 4; i++) {
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+        advance(200);
+        capture(preview_names[i]);
+    }
+    assert(!memcmp(&before_preview, &snapshot.life, sizeof(before_preview)));
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    advance(200);
     capture("family");
     for (int i = 0; i < 100; i++) {
         demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
@@ -148,6 +159,28 @@ int main(void)
     advance(200);
     capture("apex-happy");
     demo_pet_exit();
+    /* Each route keeps its own final form, sleep face and archived identity. */
+    for (unsigned route = PET_ROUTE_ARMOR; route <= PET_ROUTE_EXPLORER; route++) {
+        snapshot.life.family.route = route;
+        snapshot.life.family.archive[0].route = route;
+        snapshot.life.family.archive[0].stage = PET_STAGE_APEX;
+        snapshot.life.legacy_mask = 0;
+        snapshot.revision++;
+        lv_screen_load(lv_obj_create(NULL));
+        demo_pet_enter();
+        advance(300);
+        capture(route == PET_ROUTE_ARMOR ? "adult-armor" : route == PET_ROUTE_WILD ? "adult-wild" : "adult-explorer");
+        advance(33000);
+        capture(route == PET_ROUTE_ARMOR ? "sleep-armor" : route == PET_ROUTE_WILD ? "sleep-wild" : "sleep-explorer");
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        advance(200);
+        capture("route-locked");
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        advance(200);
+        capture("route-family");
+        demo_pet_exit();
+    }
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
     lv_screen_load(lv_obj_create(NULL));
     advance(3000);

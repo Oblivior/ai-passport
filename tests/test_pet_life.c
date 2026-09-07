@@ -129,9 +129,64 @@ static void test_protocol(void)
     assert(!pet_life_date_valid(20260229));
 }
 
+static void test_routes(void)
+{
+    const unsigned amounts[] = {2, 3, 5};
+    const pet_route_t routes[] = {PET_ROUTE_EXPLORER, PET_ROUTE_ARMOR, PET_ROUTE_WILD};
+    for (unsigned r = 0; r < 3; r++) {
+        pet_life_t life;
+        pet_life_init(&life, NULL);
+        assert(pet_life_route(&life) == PET_ROUTE_CORE);
+        for (unsigned day = 1; day <= 6; day++) {
+            pet_usage_t u = usage(20260900 + day, amounts[r]);
+            assert(pet_life_sync(&life, &u));
+            if (day == 1) assert(pet_life_route(&life) == PET_ROUTE_CORE);
+            while (pet_life_eat(&life)) {}
+            assert(pet_life_route_locked(&life) == (day == 6));
+            assert(pet_life_valid(&life));
+        }
+        assert(life.stage == PET_STAGE_RANGER);
+        assert(pet_life_route(&life) == routes[r]);
+        pet_life_t restored;
+        memcpy(&restored, &life, sizeof(restored)); /* Same v2 save shape. */
+        assert(pet_life_valid(&restored) && pet_life_route(&restored) == routes[r]);
+        for (unsigned day = 7; day <= 20; day++) {
+            pet_usage_t u = usage(20260900 + day, amounts[(r + 1) % 3]);
+            assert(pet_life_sync(&life, &u));
+            while (pet_life_eat(&life)) {}
+            assert(pet_life_route(&life) == routes[r]);
+        }
+        pet_usage_t next = usage(20261001, 1);
+        assert(pet_life_sync(&life, &next));
+        assert(life.family.archive[0].route == routes[r]);
+        assert(!pet_life_route_locked(&life) && pet_life_route(&life) == PET_ROUTE_CORE);
+        assert(pet_life_valid(&life));
+    }
+    pet_life_t life;
+    pet_life_init(&life, NULL);
+    pet_usage_t u = usage(20260901, 1);
+    assert(pet_life_sync(&life, &u));
+    u = usage(20260906, 5);
+    memcpy(u.earned, (uint8_t[]){1,5,1,5,3,5}, 6);
+    assert(pet_life_sync(&life, &u));
+    assert(pet_life_route(&life) == PET_ROUTE_ARMOR); /* Tie, excluding today. */
+    while (pet_life_eat(&life)) {}
+    assert(pet_life_route_locked(&life));
+    life.family.route = PET_ROUTE_CORE; /* Adult save from previous firmware. */
+    assert(pet_life_valid(&life));
+    assert(pet_life_sync(&life, &u));
+    assert(pet_life_route_locked(&life));
+    pet_life_t before = life;
+    u.date = 20260905;
+    assert(!pet_life_sync(&life, &u));
+    assert(!memcmp(&life, &before, sizeof(life)));
+    life.family.route = 255;
+    assert(!pet_life_valid(&life));
+}
+
 int main(void)
 {
     test_three_days(); test_adoption_and_catchup(); test_migration_and_month();
-    test_full_lifecycle(); test_protocol();
-    puts("pet_life/protocol: PASS (three days, replay, catchup, migration, calendar, 16-day evolution)");
+    test_full_lifecycle(); test_protocol(); test_routes();
+    puts("pet_life/protocol: PASS (progression, replay, calendar, three routes, lock, v2 compatibility, archive)");
 }

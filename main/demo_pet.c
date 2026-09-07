@@ -5,7 +5,7 @@
 #include "bsp_battery.h"
 #include "esp_timer.h"
 
-typedef enum { PAGE_HOME, PAGE_PROGRESS, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
+typedef enum { PAGE_HOME, PAGE_PROGRESS, PAGE_ROUTE, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
 static pet_snapshot_t s_state;
 static pet_page_t s_page;
 static pet_pose_t s_pose;
@@ -13,6 +13,7 @@ static lv_obj_t *s_scr, *s_content, *s_battery, *s_pet;
 static lv_timer_t *s_timer;
 static uint32_t s_action_at, s_pose_at, s_frame;
 static unsigned s_archive;
+static unsigned s_route_preview;
 static uint8_t s_before_stage;
 static bool s_eat_requested;
 
@@ -45,9 +46,13 @@ static void draw_home(void)
     lv_obj_set_style_pad_all(plate, 0, 0);
     lv_obj_set_style_border_width(plate, 2, 0);
     uint8_t stage = s_pose == PET_POSE_EVOLVE || s_pose == PET_POSE_EAT ? s_before_stage : s_state.life.stage;
-    lv_obj_t *name = ui_pixel_label(plate, pet_model_stage_name(stage), &lv_font_montserrat_20, UI_INK);
+    pet_route_t route = pet_life_route_locked(&s_state.life) ? pet_life_route(&s_state.life) : PET_ROUTE_CORE;
+    lv_obj_t *name = ui_pixel_label(plate, pet_model_stage_name(stage),
+        stage >= PET_STAGE_RANGER ? &lv_font_montserrat_14 : &lv_font_montserrat_20, UI_INK);
+    if (stage >= PET_STAGE_RANGER) lv_label_set_text_fmt(name, "%s / %s",
+        pet_model_stage_name(stage), pet_model_route_name(route));
     lv_obj_center(name);
-    s_pet = pet_view_create_pose(panel, stage, 49, 40, s_pose);
+    s_pet = pet_view_create_route_pose(panel, stage, route, 49, 40, s_pose);
     lv_obj_t *stats = label(panel, "", 140, UI_INK);
     lv_label_set_text_fmt(stats, "LUNCH %u    DAYS %u", pet_life_pending(&s_state.life), pet_life_days(&s_state.life));
     unsigned pending = pet_life_pending(&s_state.life);
@@ -66,7 +71,7 @@ static void draw_home(void)
 static void draw_progress(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, "NEXT EVOLUTION", 0, UI_INK);
+    label(panel, s_state.life.stage == PET_STAGE_APEX ? "FINAL FORM" : "NEXT EVOLUTION", 0, UI_INK);
     const pet_life_t *life = &s_state.life;
     label(panel, pet_model_stage_name(life->stage < PET_STAGE_APEX ? life->stage + 1 : PET_STAGE_APEX), 25, UI_ORANGE);
     lv_obj_t *stats = label(panel, "", 55, UI_INK);
@@ -82,6 +87,22 @@ static void draw_progress(void)
     label(panel, "REST WITHOUT LOSS", 180, UI_SKY_DARK);
 }
 
+static void draw_route(void)
+{
+    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    pet_route_t route = s_route_preview ? (pet_route_t)s_route_preview : pet_life_route(&s_state.life);
+    label(panel, pet_model_route_name(route), 0, UI_INK);
+    label(panel, s_route_preview ? "PREVIEW ONLY" : pet_life_route_locked(&s_state.life) ?
+        "YOUR LOCKED ROUTE" : "YOUR TENDENCY", 22, UI_SKY_DARK);
+    pet_stage_t stage = s_route_preview ? PET_STAGE_APEX : s_state.life.stage >= PET_STAGE_RANGER ?
+        s_state.life.stage : PET_STAGE_RANGER;
+    pet_view_create_route_pose(panel, stage, route, 49, 42, PET_POSE_IDLE);
+    label(panel, pet_life_route_hint(route), 140, UI_INK);
+    label(panel, s_route_preview ? "SAME GROWTH LIMITS" : pet_life_route_locked(&s_state.life) ?
+        "KEPT IN YOUR FAMILY" : "LOCKS AT RANGER", 158, UI_SKY_DARK);
+    label(panel, "OK: PREVIEW ROUTES", 180, UI_INK);
+}
+
 static void draw_archive(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
@@ -93,10 +114,11 @@ static void draw_archive(void)
     }
     s_archive %= count;
     const pet_archive_entry_t *entry = &s_state.life.family.archive[s_archive];
-    pet_view_create(panel, entry->stage, 49, 40);
-    lv_obj_t *details = label(panel, "", 135, UI_INK);
-    lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s  %u/%u", entry->year, entry->month,
-        pet_model_stage_name(entry->stage), s_state.life.legacy_mask & (1U << s_archive) ? "DEMO MEMORY" : "LOCAL CHAPTER",
+    pet_view_create_route_pose(panel, entry->stage, entry->route, 49, 28, PET_POSE_IDLE);
+    lv_obj_t *details = label(panel, "", 126, UI_INK);
+    lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s\n%s  %u/%u", entry->year, entry->month,
+        pet_model_stage_name(entry->stage), pet_model_route_name(entry->route),
+        s_state.life.legacy_mask & (1U << s_archive) ? "DEMO MEMORY" : "LOCAL CHAPTER",
         s_archive + 1, count);
     label(panel, "OK: NEXT MEMORY", 180, UI_SKY_DARK);
 }
@@ -108,6 +130,7 @@ static void draw_page(void)
     s_pet = NULL;
     if (s_page == PAGE_HOME) draw_home();
     else if (s_page == PAGE_PROGRESS) draw_progress();
+    else if (s_page == PAGE_ROUTE) draw_route();
     else draw_archive();
 }
 
@@ -164,6 +187,7 @@ void demo_pet_enter(void)
     s_pose = PET_POSE_IDLE;
     s_action_at = s_pose_at = lv_tick_get();
     s_eat_requested = false;
+    s_route_preview = 0;
     s_archive = s_state.life.family.archive_count ? s_state.life.family.archive_count - 1 : 0;
     s_scr = ui_pixel_screen_create("AI PET");
     s_battery = ui_pixel_label(s_scr, "--%", &lv_font_montserrat_14, UI_PAPER);
@@ -195,11 +219,15 @@ void demo_pet_key(bsp_btn_t btn, bsp_btn_ev_t ev)
     s_action_at = lv_tick_get();
     if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
         s_page = btn == BSP_BTN_UP ? (s_page + PAGE_COUNT - 1) % PAGE_COUNT : (s_page + 1) % PAGE_COUNT;
+        s_route_preview = 0;
         draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_HOME) {
         if (s_pose == PET_POSE_EAT || s_pose == PET_POSE_EVOLVE || s_eat_requested) return;
         if (pet_life_pending(&s_state.life)) s_eat_requested = pet_service_eat();
         else pose(PET_POSE_HAPPY);
+    } else if (btn == BSP_BTN_OK && s_page == PAGE_ROUTE) {
+        s_route_preview = (s_route_preview + 1) % 4;
+        draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_ARCHIVE) {
         s_archive++;
         draw_page();

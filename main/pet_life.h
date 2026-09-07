@@ -36,3 +36,11 @@ unsigned pet_life_meals(const pet_life_t *life);
 unsigned pet_life_days(const pet_life_t *life);
 unsigned pet_life_next_meals(const pet_life_t *life);
 unsigned pet_life_next_days(const pet_life_t *life);
+
+/* Daily food tiers describe usage intensity, not quality or tool diversity.
+ * Completed days only: today's growing entitlement must not bias the lock.
+ * The existing family.route field stores the current month's locked route;
+ * this does not change the v2 on-flash structure or namespace. */
+pet_route_t pet_life_route(const pet_life_t *life);
+bool pet_life_route_locked(const pet_life_t *life);
+const char *pet_life_route_hint(pet_route_t route);

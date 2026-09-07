@@ -15,7 +15,16 @@ static lv_obj_t *pixel(lv_obj_t *parent, int x, int y, int w, int h, uint32_t co
     return obj;
 }
 
-lv_obj_t *pet_view_create(lv_obj_t *parent, pet_stage_t stage, int x, int y)
+static uint32_t body_color(pet_stage_t stage, pet_route_t route)
+{
+    if (stage < PET_STAGE_RANGER) return UI_ORANGE;
+    if (route == PET_ROUTE_ARMOR) return 0x427AA1;
+    if (route == PET_ROUTE_WILD) return 0xE87532;
+    if (route == PET_ROUTE_EXPLORER) return 0x389986;
+    return 0x7557D9;
+}
+
+static lv_obj_t *create(lv_obj_t *parent, pet_stage_t stage, pet_route_t route, int x, int y)
 {
     lv_obj_t *pet = lv_obj_create(parent);
     lv_obj_remove_flag(pet, LV_OBJ_FLAG_SCROLLABLE);
@@ -34,7 +43,7 @@ lv_obj_t *pet_view_create(lv_obj_t *parent, pet_stage_t stage, int x, int y)
         return pet;
     }
 
-    uint32_t body = stage >= PET_STAGE_RANGER ? 0x7557D9 : UI_ORANGE;
+    uint32_t body = body_color(stage, route);
     pixel(pet, 29, 20, 42, 45, UI_INK);
     pixel(pet, 34, 16, 32, 45, body);
     pixel(pet, 25, 28, 9, 10, body);
@@ -60,12 +69,30 @@ lv_obj_t *pet_view_create(lv_obj_t *parent, pet_stage_t stage, int x, int y)
         pixel(pet, 80, 43, 10, 6, UI_INK);
     }
     if (stage >= PET_STAGE_RANGER) {
-        pixel(pet, 31, 17, 38, 7, UI_YELLOW);
-        pixel(pet, 27, 47, 46, 7, UI_YELLOW);
+        if (route == PET_ROUTE_ARMOR) {
+            pixel(pet, 26, 17, 48, 9, 0xB9F3FF);
+            pixel(pet, 31, 46, 38, 12, 0xB9F3FF);
+            pixel(pet, 12, 42, 17, 24, UI_SKY_DARK);
+            pixel(pet, 17, 47, 7, 14, UI_PAPER);
+        } else if (route == PET_ROUTE_WILD) {
+            pixel(pet, 18, 15, 14, 18, UI_RED);
+            pixel(pet, 68, 15, 14, 18, UI_RED);
+            pixel(pet, 37, 47, 26, 7, UI_YELLOW);
+            pixel(pet, 79, 45, 15, 16, UI_ORANGE);
+        } else if (route == PET_ROUTE_EXPLORER) {
+            pixel(pet, 25, 14, 50, 8, UI_YELLOW);
+            pixel(pet, 31, 43, 40, 8, UI_RED);
+            pixel(pet, 71, 43, 17, 8, UI_RED);
+            pixel(pet, 69, 51, 12, 7, UI_RED);
+        } else {
+            pixel(pet, 31, 17, 38, 7, UI_YELLOW);
+            pixel(pet, 27, 47, 46, 7, UI_YELLOW);
+        }
     }
     if (stage >= PET_STAGE_TITAN) {
-        pixel(pet, 18, 22, 13, 17, 0xB9F3FF);
-        pixel(pet, 69, 22, 13, 17, 0xB9F3FF);
+        uint32_t armor = route == PET_ROUTE_WILD ? UI_RED : route == PET_ROUTE_EXPLORER ? 0x389986 : 0xB9F3FF;
+        pixel(pet, 18, 22, 13, 17, armor);
+        pixel(pet, 69, 22, 13, 17, armor);
         pixel(pet, 22, 55, 11, 19, UI_SKY_DARK);
         pixel(pet, 67, 55, 11, 19, UI_SKY_DARK);
     }
@@ -77,6 +104,11 @@ lv_obj_t *pet_view_create(lv_obj_t *parent, pet_stage_t stage, int x, int y)
         pixel(pet, 44, 3, 12, 13, UI_RED);
     }
     return pet;
+}
+
+lv_obj_t *pet_view_create(lv_obj_t *parent, pet_stage_t stage, int x, int y)
+{
+    return create(parent, stage, PET_ROUTE_CORE, x, y);
 }
 
 static void bounce_y(void *obj, int32_t value)
@@ -105,8 +137,14 @@ void pet_view_bounce(lv_obj_t *pet)
 
 lv_obj_t *pet_view_create_pose(lv_obj_t *parent, pet_stage_t stage, int x, int y, pet_pose_t pose)
 {
-    lv_obj_t *pet = pet_view_create(parent, stage, x, y);
-    uint32_t body = stage >= PET_STAGE_RANGER ? 0x7557D9 : UI_ORANGE;
+    return pet_view_create_route_pose(parent, stage, PET_ROUTE_CORE, x, y, pose);
+}
+
+lv_obj_t *pet_view_create_route_pose(lv_obj_t *parent, pet_stage_t stage, pet_route_t route,
+                                     int x, int y, pet_pose_t pose)
+{
+    lv_obj_t *pet = create(parent, stage, route, x, y);
+    uint32_t body = body_color(stage, route);
     if (pose == PET_POSE_SLEEP && stage != PET_STAGE_EGG) {
         pixel(pet, 39, 27, 9, 9, body);
         pixel(pet, 53, 27, 9, 9, body);

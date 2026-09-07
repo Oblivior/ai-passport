@@ -7,7 +7,7 @@ USB or application-encrypted BLE. It is a playable prototype, not a finished pro
 
 ## Play
 
-Open AI Pet in the menu. UP/DOWN switch home, next evolution and family. Click
+Open AI Pet in the menu. UP/DOWN switch home, next evolution, routes and family. Click
 OK once to eat an earned meal; an empty box makes OK pet/wake the character,
 without growth. Eating lasts 1.2 seconds and evolution lasts 1.8 seconds. Idle
 pets sleep after 30 seconds without penalties. On family, OK browses records;
@@ -26,6 +26,29 @@ long OK returns to the hardware menu. Double-click no longer creates food.
 Both conditions are required. Offline catch-up credits the original food dates,
 not the button-press date. First adoption ignores earlier history. Unclaimed
 food stays until the next monthly sync, when it expires.
+
+### Three evolution routes
+
+The route page shows a forecast; OK cycles through final-form previews without
+feeding, changing the save or selecting a route. At RANGER (12 eaten meals and
+6 usage days), the route locks for the month and stays in the family archive.
+The three routes use the same growth requirements; none is a higher rank.
+
+Only completed days since adoption vote, using earned food (not click timing):
+1-2 meals is a light day, 3 is mixed, 4-5 is high. Strictly more light days than
+each other category selects EXPLORER; strictly more high days selects WILD;
+mixed-day wins and ties select ARMOR. Days without food do not vote. Today is
+excluded because its allowance can still grow. No completed usage day shows
+CORE / waiting. Locked routes do not change with later usage or corrections.
+
+These are local food-intensity routes, not inferences about work quality, task
+depth or tool diversity, and not Bits-certified routes. Armor has a shield and
+blue plates; Wild has an orange body and red mane; Explorer has a green body and
+red scarf. All keep the existing seven stages and original procedural artwork.
+
+The v2 save shape is unchanged: the previously unused current `family.route`
+stores the lock. Earlier adult v2 saves acquire a route on their next sync or
+meal, without losing stage or food. Pre-RANGER monthly records remain CORE.
 
 ## Companion
 
@@ -96,7 +119,7 @@ not OS BLE bonding. Each connection has a fresh 16-byte challenge. Direction plu
 challenge forms the AAD; frames have a random 12-byte nonce and 16-byte tag.
 Plaintext contains a 4-byte big-endian increasing sequence followed by PET2 text.
 Wrong keys, tampering, cross-session or old-sequence replay cannot feed the pet.
-Only STATUS/SYNC are accepted; PAIR and LINK diagnostics are USB-only. Idle
+Only STATUS/ROUTE/SYNC are accepted; PAIR and LINK diagnostics are USB-only. Idle
 unauthenticated clients time out; a one-item queue and failure limit bound work.
 This does not prevent radio interference or sustained denial of service. Pairing
 files and device NVS are not encrypted at rest: physical access or local file access
@@ -121,6 +144,7 @@ the [existing non-blocking console](https://docs.espressif.com/projects/esp-idf/
 
 ```text
 PET2 STATUS
+PET2 ROUTE
 PET2 SYNC YYYYMMDD <tokens_today> <daily_goal> <31 digits, each 0..5>
 ```
 
@@ -147,8 +171,11 @@ authentication, tampering, direction isolation, stale sequences, bounds, private
 configuration and ACK handling. Firmware rejection behavior, real wireless ACKs
 and radio-enabled memory require separate device checks.
 
-Remaining: Bits settlement, independent Flux adapter, incremental collection,
-selectable species, branching evolution, encounters, sound and production sprite artwork.
+ROUTE is read-only and returns `route`, `locked` and `stage`; route IDs are
+0=CORE (unformed), 1=ARMOR, 2=WILD, 3=EXPLORER. Existing STATUS/SYNC fields stay unchanged.
+
+Remaining: Bits settlement and certified feature-based routes, independent Flux
+adapter, incremental collection, selectable species, encounters, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
 Concurrent Wi-Fi scans and the 96 KB recording demo with the persistent radio

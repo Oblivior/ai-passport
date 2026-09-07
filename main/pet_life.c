@@ -5,6 +5,45 @@
 static const uint8_t MEALS[] = {0, 1, 3, 6, 12, 24, 40};
 static const uint8_t DAYS[] = {0, 1, 2, 3, 6, 10, 16};
 
+bool pet_life_route_locked(const pet_life_t *life)
+{
+    return life->family.route >= PET_ROUTE_ARMOR && life->family.route <= PET_ROUTE_EXPLORER;
+}
+
+pet_route_t pet_life_route(const pet_life_t *life)
+{
+    if (pet_life_route_locked(life)) return (pet_route_t)life->family.route;
+    unsigned light = 0, mixed = 0, high = 0;
+    for (unsigned i = 0; life->date && i + 1 < life->date % 100; i++) {
+        unsigned food = life->earned[i];
+        if (!food) continue;
+        if (food <= 2) light++;
+        else if (food == 3) mixed++;
+        else high++;
+    }
+    if (!light && !mixed && !high) return PET_ROUTE_CORE;
+    if (light > mixed && light > high) return PET_ROUTE_EXPLORER;
+    if (high > light && high > mixed) return PET_ROUTE_WILD;
+    return PET_ROUTE_ARMOR; /* Mixed days or ties: no premium for more tokens. */
+}
+
+const char *pet_life_route_hint(pet_route_t route)
+{
+    switch (route) {
+        case PET_ROUTE_ARMOR: return "MIXED DAYS / TIES";
+        case PET_ROUTE_WILD: return "MOST DAYS: 4-5 FOOD";
+        case PET_ROUTE_EXPLORER: return "MOST DAYS: 1-2 FOOD";
+        default: return "WAIT FOR A FULL DAY";
+    }
+}
+
+static void lock_route(pet_life_t *life)
+{
+    if (life->stage < PET_STAGE_RANGER || pet_life_route_locked(life)) return;
+    pet_route_t route = pet_life_route(life);
+    life->family.route = route == PET_ROUTE_CORE ? PET_ROUTE_ARMOR : route;
+}
+
 bool pet_life_date_valid(uint32_t date)
 {
     unsigned y = date / 10000, m = date / 100 % 100, d = date % 100;
@@ -90,7 +129,8 @@ void pet_life_init(pet_life_t *life, const pet_model_t *legacy)
 bool pet_life_valid(const pet_life_t *life)
 {
     if (!life || life->version != PET_LIFE_VERSION || life->family.archive_count > PET_ARCHIVE_MAX ||
-        life->stage >= PET_STAGE_COUNT) return false;
+        life->stage >= PET_STAGE_COUNT || life->family.route > PET_ROUTE_EXPLORER ||
+        (life->stage < PET_STAGE_RANGER && life->family.route != PET_ROUTE_CORE)) return false;
     if (life->date && (!pet_life_date_valid(life->date) || !life->adopted_day ||
         life->adopted_day > life->date % 100 || !life->daily_goal)) return false;
     for (unsigned i = 0; i < PET_LIFE_DAYS; i++) {
@@ -117,9 +157,10 @@ bool pet_life_sync(pet_life_t *life, const pet_usage_t *usage)
     if (!new_month && life->daily_goal != usage->daily_goal) return false;
     if (new_month) {
         if (life->date) {
+            lock_route(life); /* Earlier v2 adults had no route yet. */
             pet_archive_entry_t entry = {
                 .year = life->date / 10000, .month = life->date / 100 % 100,
-                .stage = life->stage, .route = PET_ROUTE_CORE,
+                .stage = life->stage, .route = life->family.route,
                 .food_total = pet_life_meals(life),
             };
             archive(life, entry, false); /* Local record, never labeled Bits official. */
@@ -127,6 +168,7 @@ bool pet_life_sync(pet_life_t *life, const pet_usage_t *usage)
         memset(life->earned, 0, sizeof(life->earned));
         memset(life->eaten, 0, sizeof(life->eaten));
         life->stage = PET_STAGE_EGG;
+        life->family.route = PET_ROUTE_CORE;
         /* First adoption excludes previous history; later months can catch up. */
         life->adopted_day = life->date ? 1 : day;
         life->daily_goal = usage->daily_goal;
@@ -136,6 +178,7 @@ bool pet_life_sync(pet_life_t *life, const pet_usage_t *usage)
     for (unsigned i = life->adopted_day - 1; i < day; i++) {
         if (usage->earned[i] > life->earned[i]) life->earned[i] = usage->earned[i];
     }
+    lock_route(life);
     return true;
 }
 
@@ -146,6 +189,7 @@ bool pet_life_eat(pet_life_t *life)
         if (life->eaten[i] >= life->earned[i]) continue;
         life->eaten[i]++;
         life->stage = stage_for(life);
+        lock_route(life);
         return true;
     }
     return false;

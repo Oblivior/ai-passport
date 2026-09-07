@@ -142,6 +142,14 @@ static void handle_line(pet_snapshot_t *state, const char *line)
         reply(state, state->storage_ok ? "STATUS" : "STORAGE_ERROR");
         return;
     }
+    if (!strcmp(line, "PET2 ROUTE")) {
+        char response[96];
+        snprintf(response, sizeof(response), "PET2 ROUTE route=%u locked=%u stage=%u",
+            (unsigned)pet_life_route(&state->life), pet_life_route_locked(&state->life), state->life.stage);
+        if (s_wireless_request) pet_ble_reply(response);
+        else { printf("\n%s\n", response); fflush(stdout); }
+        return;
+    }
     pet_usage_t usage;
     pet_life_t next = state->life;
     if (!pet_protocol_parse(line, &usage) || !pet_life_sync(&next, &usage)) {
