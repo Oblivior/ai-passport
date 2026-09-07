@@ -102,6 +102,24 @@ int main(void)
     h = before; h.partners[0].adopted_day = 32; assert(!pet_house_valid(&h));
     h = before; h.partners[0].highest_plus_one = 0; assert(!pet_house_valid(&h));
     h = before;
+    /* Retire only robot history, preserving real archives and every other byte. */
+    h.archive_count = 4;
+    h.archive[1] = h.archive[0]; h.archive[1].species_id = PET_AGUMON;
+    h.archive[2] = h.archive[0];
+    h.archive[3] = h.archive[0]; h.archive[3].species_id = PET_GABUMON;
+    pet_house_t expected = h;
+    expected.archive[0] = h.archive[1]; expected.archive[1] = h.archive[3];
+    memset(expected.archive + 2, 0, sizeof(expected.archive) - 2 * sizeof(expected.archive[0]));
+    expected.archive_count = 2;
+    assert(pet_house_clear_legacy_archives(&h) == 2 && !memcmp(&h, &expected, sizeof(h)));
+    assert(pet_house_valid(&h) && pet_house_clear_legacy_archives(&h) == 0);
+    h = before;
+    assert(pet_house_clear_legacy_archives(&h) == 1 && h.archive_count == 0);
+    assert(!memcmp(&h.life, &before.life, sizeof(h.life)));
+    assert(!memcmp(h.partners, before.partners, sizeof(h.partners)));
+    h = before; h.archive[0].species_id = 8; expected = h;
+    assert(!pet_house_clear_legacy_archives(&h) && !memcmp(&h, &expected, sizeof(h)));
+    h = before;
     for (unsigned month = 10; month <= 12; month++) {
         usage = (pet_usage_t){.date = 20260001 + month * 100, .daily_goal = 1000};
         assert(pet_house_sync(&h, &usage));

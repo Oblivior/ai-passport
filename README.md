@@ -10,7 +10,8 @@ USB or application-encrypted BLE. It is a playable prototype, not a finished pro
 Open the Digimon entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, evolution catalog, partner house and family. Click
 OK once to eat an earned meal; an empty box makes OK pet/wake the character,
 without growth. Eating lasts 1.2 seconds and evolution lasts 1.8 seconds. Idle
-pets sleep after 30 seconds without penalties. On family, OK browses records;
+pets sleep after 30 seconds without penalties. On family, OK returns home when
+there are zero or one records, and cycles through records when there are more;
 long OK returns to the hardware menu. Double-click no longer creates food.
 
 | Stage | Meals eaten | Usage days with eaten food |
@@ -68,7 +69,12 @@ raised forms from previews. Discoveries survive monthly rollover; browsing alone
 never unlocks a form. There is no species-changing skin operation.
 
 Existing v2 live progress migrates to Agumon without losing its food or days.
-All pre-v3 archive records retain the original robot presentation. The existing
+Startup removes obsolete robot archives (`species_id=0`) from the active v3 save,
+including during legacy migration. Current partners, food, growth, discoveries
+and real Digimon archives remain intact. Original legacy namespaces and private
+upgrade backups remain available for recovery. If cleanup cannot be committed,
+the original state is retained and writes are blocked until a successful reboot.
+The existing
 food-intensity `family.route` values and ROUTE diagnostics remain for compatibility
 but describe the shared usage ledger, not a species or a branch. No SkullGreymon
 branch is implemented, and high Token usage is not treated as bad care.

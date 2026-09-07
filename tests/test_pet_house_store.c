@@ -118,10 +118,13 @@ int main(void)
     pet_usage_t usage = {.date = 20260907, .daily_goal = 1000}; usage.earned[6] = 3;
     assert(pet_life_sync(&legacy.life, &usage));
     assert(pet_life_eat(&legacy.life));
+    legacy.life.family.archive_count = 1;
+    legacy.life.family.archive[0] = (pet_archive_entry_t){.year = 2026, .month = 8, .stage = PET_STAGE_APEX};
     legacy.crc = checksum(&legacy, offsetof(legacy_record_t, crc));
     legacy_record_t source = legacy;
     assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked && out.active_id == PET_AGUMON);
     assert(pet_house_meals(&out, PET_AGUMON) == 1 && pet_life_pending(&out.life) == 2);
+    assert(out.archive_count == 0); /* v2 robot history is not imported into this product. */
     assert(!memcmp(&source, &legacy, sizeof(legacy)));
     assert(pet_house_choose(&out, PET_GABUMON));
     assert(pet_house_store_save(&out, &loaded));
@@ -135,6 +138,35 @@ int main(void)
     v2_exists = false; v1_exists = true; v1_valid = false;
     assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked && writes == previous_writes);
     v1_valid = true;
-    assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked && !out.active_id && out.archive_count == 1);
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked && !out.active_id && out.archive_count == 0);
+    /* Upgrade an existing mixed v3 archive via normal CRC transactions. */
+    assert(pet_house_choose(&out, PET_AGUMON));
+    assert(pet_house_sync(&out, &usage));
+    assert(pet_house_eat(&out));
+    assert(pet_house_choose(&out, PET_GABUMON));
+    out.archive_count = 3;
+    for (unsigned i = 0; i < 3; i++) out.archive[i] = (pet_house_archive_t){
+        .species_id = i, .result = {.year = 2026, .month = 8, .stage = PET_STAGE_APEX}};
+    assert(pet_house_store_save(&out, &loaded));
+    pet_house_t original = out, cleaned = out;
+    assert(pet_house_clear_legacy_archives(&cleaned) == 1);
+    uint32_t original_generation = loaded;
+    fail_commit = true;
+    assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked);
+    assert(loaded == original_generation && !memcmp(&out, &original, sizeof(out)));
+    assert(pet_house_store_load(&house, &generation) == 1 && !memcmp(&house, &original, sizeof(house)));
+    fail_commit = false; fail_write = true;
+    assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked);
+    assert(loaded == original_generation && !memcmp(&out, &original, sizeof(out)));
+    fail_write = false;
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked);
+    assert(loaded == original_generation + 1 && !memcmp(&out, &cleaned, sizeof(out)));
+    previous_writes = writes;
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && writes == previous_writes);
+    assert(!memcmp(&out, &cleaned, sizeof(out)));
+    /* Falling back to an older CRC slot must not resurrect robot history. */
+    slots[loaded % 2][24] ^= 1;
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked);
+    assert(!memcmp(&out, &cleaned, sizeof(out)));
     puts("pet_house_store: PASS (real boot migration v1/v2, preservation, CRC slots, failed writes/commits, corruption, generation wrap, future catalog)");
 }

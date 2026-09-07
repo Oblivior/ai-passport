@@ -97,7 +97,16 @@ bool pet_house_store_boot(pet_house_t *house, uint32_t *generation, bool *blocke
     *generation = 0;
     int loaded = pet_house_store_load(house, generation);
     *blocked = loaded < 0;
-    if (loaded == 1) return true;
+    if (loaded == 1) {
+        pet_house_t cleaned = *house;
+        if (!pet_house_clear_legacy_archives(&cleaned)) return true;
+        /* Persist through the normal CRC slots before publishing the cleanup.
+         * On failure keep the original state and block writes until reboot;
+         * never let a later sync silently save the uncleaned state as success. */
+        if (!pet_house_store_save(&cleaned, generation)) { *blocked = true; return false; }
+        *house = cleaned;
+        return true;
+    }
     pet_house_init(house, NULL);
     if (*blocked) return false;
     pet_life_t legacy;
@@ -115,5 +124,6 @@ bool pet_house_store_boot(pet_house_t *house, uint32_t *generation, bool *blocke
     }
     if (previous < 0) { *blocked = true; return false; }
     pet_house_init(house, &legacy);
+    pet_house_clear_legacy_archives(house);
     return pet_house_store_save(house, generation);
 }

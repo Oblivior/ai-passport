@@ -47,6 +47,18 @@ static void clear_pantry_archive(pet_house_t *house)
     house->life.family.archive_count = 0;
     house->life.legacy_mask = 0;
 }
+unsigned pet_house_clear_legacy_archives(pet_house_t *house)
+{
+    if (!pet_house_valid(house)) return 0;
+    unsigned kept = 0, original = house->archive_count;
+    for (unsigned i = 0; i < original; i++) {
+        if (house->archive[i].species_id) house->archive[kept++] = house->archive[i];
+    }
+    if (kept == original) return 0;
+    memset(house->archive + kept, 0, (PET_ARCHIVE_MAX - kept) * sizeof(house->archive[0]));
+    house->archive_count = kept;
+    return original - kept;
+}
 void pet_house_init(pet_house_t *house, const pet_life_t *legacy)
 {
     memset(house, 0, sizeof(*house));

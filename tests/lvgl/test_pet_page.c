@@ -316,6 +316,42 @@ static void partner_scenarios(void)
     demo_pet_exit();
 }
 
+static void archive_key_scenarios(void)
+{
+    set_stage(PET_AGUMON, PET_STAGE_SPARK);
+    snapshot.house.archive_count = 0;
+    lv_screen_load(lv_obj_create(NULL)); demo_pet_enter(); advance(300);
+    pet_house_t before = snapshot.house;
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300);
+    capture("archive-empty-return");
+    assert(has_text(lv_screen_active(), "按确定：回到伙伴身边"));
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+    assert(has_text(lv_screen_active(), "Lv.1"));
+    assert(!memcmp(&before, &snapshot.house, sizeof(before)));
+    demo_pet_exit();
+    for (unsigned count = 1; count <= 3; count++) {
+        snapshot.house.archive_count = count;
+        for (unsigned i = 0; i < count; i++) snapshot.house.archive[i] = (pet_house_archive_t){
+            .species_id = i + 1, .result = {.year = 2026, .month = 8, .stage = PET_STAGE_APEX}};
+        before = snapshot.house;
+        lv_screen_load(lv_obj_create(NULL)); demo_pet_enter();
+        demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300);
+        char name[32]; snprintf(name, sizeof(name), "archive-count-%u", count); capture(name);
+        assert(has_text(lv_screen_active(), count == 1 ? "仅此一只 · 确定返回" : "按确定：下一只伙伴"));
+        for (unsigned press = 0; press <= count; press++) {
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            if (count == 1) { assert(has_text(lv_screen_active(), "Lv.1")); break; }
+            char expected[150];
+            snprintf(expected, sizeof(expected), "2026-08  %s\n究极体\n本地成长记录  %u/%u",
+                pet_catalog_form(press % count + 1, PET_STAGE_APEX), press % count + 1, count);
+            assert(has_text(lv_screen_active(), expected));
+            capture("archive-cycle");
+        }
+        assert(!memcmp(&before, &snapshot.house, sizeof(before)));
+        demo_pet_exit();
+    }
+}
+
 int main(void)
 {
     lv_init();
@@ -545,6 +581,7 @@ int main(void)
     demo_pet_exit();
     partner_scenarios();
     home_progress_scenarios();
+    archive_key_scenarios();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
     lv_screen_load(lv_obj_create(NULL));
     advance(3000);

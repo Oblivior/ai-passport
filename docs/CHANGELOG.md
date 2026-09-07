@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- Remove obsolete robot family records from active saves through CRC-protected
+  startup transactions, preserving current companions and real Digimon history.
+  Keep legacy source saves unchanged and retry failed cleanup on reboot. Make
+  family-page OK return home for zero or one records and cycle only for multiple
+  records, with matching footer hints. Test mixed archives, migration, failed
+  writes, CRC fallback, idempotency and real LVGL button navigation.
+
 - Align companion-page titles and grass-footer actions, show separate food/day
   evolution bars, label catalog form positions and partner selection positions,
   and add empty-archive navigation and wireless-page return hints. Compact large

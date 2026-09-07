@@ -265,8 +265,8 @@ static void draw_archive(void)
     page_title(panel, "我的家族图鉴");
     unsigned count = s_state.house.archive_count;
     if (!count) {
-        label(panel, "第一只伙伴\n还在慢慢长大\n\n下个月来翻翻图鉴吧", 60, UI_SKY_DARK);
-        page_footer("上下翻页");
+        label(panel, "这个月的伙伴\n还在慢慢长大\n\n下个月来翻翻图鉴吧", 60, UI_SKY_DARK);
+        page_footer("按确定：回到伙伴身边");
         return;
     }
     s_archive %= count;
@@ -281,7 +281,7 @@ static void draw_archive(void)
         legacy ? pet_ui_route_name(entry->route) : pet_ui_stage_level(entry->stage),
         legacy ? "试玩回忆" : "本地成长记录",
         s_archive + 1, count);
-    page_footer("按确定：下一只伙伴");
+    page_footer(count == 1 ? "仅此一只 · 确定返回" : "按确定：下一只伙伴");
 }
 
 static void draw_page(void)
@@ -450,7 +450,8 @@ void demo_pet_key(bsp_btn_t btn, bsp_btn_ev_t ev)
         s_form_preview = (s_form_preview + 1) % PET_STAGE_COUNT;
         draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_ARCHIVE) {
-        s_archive++;
+        if (s_state.house.archive_count < 2) s_page = PAGE_HOME;
+        else s_archive = (s_archive + 1) % s_state.house.archive_count;
         draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_PARTNERS) {
         s_selecting = true;

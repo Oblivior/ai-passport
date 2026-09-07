@@ -34,3 +34,6 @@ const pet_partner_t *pet_house_partner(const pet_house_t *house, unsigned id);
 unsigned pet_house_meals(const pet_house_t *house, unsigned id);
 unsigned pet_house_days(const pet_house_t *house, unsigned id);
 unsigned pet_house_stage(const pet_house_t *house, unsigned id);
+/* Remove only obsolete species_id=0 demo archives. Does not touch current
+ * partners, pantry, lifetime discoveries or real species archives. */
+unsigned pet_house_clear_legacy_archives(pet_house_t *house);
