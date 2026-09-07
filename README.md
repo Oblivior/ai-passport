@@ -7,7 +7,7 @@ USB or application-encrypted BLE. It is a playable prototype, not a finished pro
 
 ## Play
 
-Open AI Pet in the menu. UP/DOWN switch home, next evolution, routes and family. Click
+Open the pet entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, routes and family. Click
 OK once to eat an earned meal; an empty box makes OK pet/wake the character,
 without growth. Eating lasts 1.2 seconds and evolution lasts 1.8 seconds. Idle
 pets sleep after 30 seconds without penalties. On family, OK browses records;
@@ -26,6 +26,24 @@ long OK returns to the hardware menu. Double-click no longer creates food.
 Both conditions are required. Offline catch-up credits the original food dates,
 not the button-press date. First adoption ignores earlier history. Unclaimed
 food stays until the next monthly sync, when it expires.
+
+### Daily lunchbox
+
+Five slots show eaten, available and not-yet-earned meals for the displayed source
+date. The page shows that date's exact Token snapshot, the remaining Tokens and
+progress to the next meal, and older pending food separately. Food is consumed
+oldest-first; eating yesterday's food does not fill today's eaten slots. OK on
+this page returns home without feeding. At five earned meals the page marks the
+daily cap instead of encouraging further usage.
+
+The first positive usage earns food; each subsequent meal requires strictly
+exceeding a 20% boundary of the locked daily goal. Downward data corrections do
+not revoke earned food. This is a periodically synchronized local snapshot, not
+a real-time counter or a Bits-certified total. Before the first sync after boot,
+or after ten minutes without sync, the page labels it as the previous lunchbox
+and retains its source date. New food produces a four-second home notice without
+interrupting eating/evolution or switching pages; identical syncs do not replay
+the notice. No change to v2 saves, the wire protocol or food allowances.
 
 ### Three evolution routes
 

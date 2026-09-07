@@ -2,11 +2,14 @@
 #include "pet_service.h"
 #include "pet_view.h"
 #include "pet_ui_text.h"
+#include "pet_lunch.h"
 #include "ui_pixel.h"
 #include "bsp_battery.h"
 #include "esp_timer.h"
 
-typedef enum { PAGE_HOME, PAGE_PROGRESS, PAGE_ROUTE, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
+#include <stdio.h>
+
+typedef enum { PAGE_HOME, PAGE_LUNCH, PAGE_PROGRESS, PAGE_ROUTE, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
 static pet_snapshot_t s_state;
 static pet_page_t s_page;
 static pet_pose_t s_pose;
@@ -17,6 +20,15 @@ static unsigned s_archive;
 static unsigned s_route_preview;
 static uint8_t s_before_stage;
 static bool s_eat_requested;
+static bool s_delivery_notice;
+static uint32_t s_delivery_at;
+static bool s_lunch_recent;
+
+static bool sync_recent(void)
+{
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    return s_state.synced_at && now - s_state.synced_at <= 600000U;
+}
 
 static lv_obj_t *label(lv_obj_t *parent, const char *text, int y, uint32_t color)
 {
@@ -33,6 +45,7 @@ static const char *home_hint(void)
     if (!s_state.storage_ok) return "存档失败，请重试";
     if (s_pose == PET_POSE_EAT) return "啊呜啊呜，真香！";
     if (s_pose == PET_POSE_EVOLVE) return "要进化啦！";
+    if (s_delivery_notice) return "饭盒送到啦，按确定开饭";
     if (s_pose == PET_POSE_HAPPY) return "见到你真开心！";
     if (pet_life_pending(&s_state.life)) return "按确定：开饭啦";
     if (!s_state.life.date) return "连接电脑同步后孵化";
@@ -67,6 +80,59 @@ static void draw_home(void)
     lv_obj_set_style_bg_color(tray, lv_color_hex(pending ? UI_ORANGE : UI_PAPER), 0);
     lv_obj_remove_flag(tray, LV_OBJ_FLAG_SCROLLABLE);
     label(panel, home_hint(), 180, pending ? UI_SKY_DARK : UI_INK);
+}
+
+static void draw_lunch(void)
+{
+    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    const pet_life_t *life = &s_state.life;
+    pet_lunch_t lunch = pet_lunch_read(life);
+    bool recent = s_lunch_recent = sync_recent();
+    label(panel, recent ? "今日饭盒" : "上次的饭盒", 0, UI_INK);
+    if (!lunch.available) {
+        label(panel, "还没收到用量\n\n正常使用 AI 后\n连接电脑送来第一餐", 48, UI_SKY_DARK);
+        label(panel, "按确定：回到伙伴身边", 180, UI_INK);
+        return;
+    }
+    lv_obj_t *date = label(panel, "", 22, UI_SKY_DARK);
+    lv_label_set_text_fmt(date, "%02lu-%02lu / %s", (unsigned long)(life->date / 100 % 100),
+        (unsigned long)(life->date % 100), recent ? "同步快照" : "等待同步");
+    for (unsigned i = 0; i < 5; i++) {
+        bool eaten = i < lunch.eaten, earned = i < lunch.earned;
+        lv_obj_t *slot = lv_obj_create(panel);
+        lv_obj_set_pos(slot, 3 + (int)i * 38, 45);
+        lv_obj_set_size(slot, 34, 31);
+        lv_obj_remove_flag(slot, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(slot, 0, 0);
+        lv_obj_set_style_pad_all(slot, 0, 0);
+        lv_obj_set_style_border_width(slot, 2, 0);
+        lv_obj_set_style_border_color(slot, lv_color_hex(UI_INK), 0);
+        lv_obj_set_style_bg_color(slot, lv_color_hex(eaten ? UI_MUTED : earned ? UI_ORANGE : UI_PAPER), 0);
+        lv_obj_t *state = ui_pixel_label(slot, eaten ? "饱" : earned ? "饭" : "·", &passport_zh_14, UI_INK);
+        lv_obj_center(state);
+    }
+    lv_obj_t *counts = label(panel, "", 81, UI_INK);
+    lv_label_set_text_fmt(counts, "本日 %u/5 份 · 已吃 %u", lunch.earned, lunch.eaten);
+    /* Use libc for 64-bit values; do not depend on LVGL's optional formatter. */
+    char text[80];
+    snprintf(text, sizeof(text), "%llu Token", (unsigned long long)life->tokens_today);
+    label(panel, text, 102, UI_SKY_DARK);
+    if (lunch.earned == 5) snprintf(text, sizeof(text), "五份齐了，安心休息吧");
+    else if (!lunch.remaining_tokens) snprintf(text, sizeof(text), "等待下一轮食物同步");
+    else snprintf(text, sizeof(text), "下份还差 %llu", (unsigned long long)lunch.remaining_tokens);
+    label(panel, text, 123, UI_INK);
+    lv_obj_t *bar = lv_bar_create(panel);
+    lv_obj_set_pos(bar, 3, 145);
+    lv_obj_set_size(bar, 186, 8);
+    lv_obj_set_style_radius(bar, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(UI_MUTED), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(UI_ORANGE), LV_PART_INDICATOR);
+    lv_bar_set_value(bar, (int)lunch.progress, LV_ANIM_OFF);
+    lv_obj_t *older = label(panel, "", 158, UI_SKY_DARK);
+    if (lunch.older_pending) lv_label_set_text_fmt(older, "另有旧饭 %u 份，先吃旧饭", lunch.older_pending);
+    else lv_label_set_text(older, "食物按来源日期记录");
+    label(panel, !s_state.storage_ok ? "存档失败，请重试" : "按确定：回到伙伴身边", 180, UI_INK);
 }
 
 static void draw_progress(void)
@@ -130,6 +196,7 @@ static void draw_page(void)
     lv_obj_clean(s_content);
     s_pet = NULL;
     if (s_page == PAGE_HOME) draw_home();
+    else if (s_page == PAGE_LUNCH) draw_lunch();
     else if (s_page == PAGE_PROGRESS) draw_progress();
     else if (s_page == PAGE_ROUTE) draw_route();
     else draw_archive();
@@ -149,15 +216,24 @@ static void tick(lv_timer_t *timer)
     if (pet_service_snapshot(&next)) {
         bool changed = next.revision != s_state.revision || next.storage_ok != s_state.storage_ok;
         bool ate = pet_life_meals(&next.life) > pet_life_meals(&s_state.life) && next.life.date / 100 == s_state.life.date / 100;
-        bool delivery = pet_life_pending(&next.life) > pet_life_pending(&s_state.life);
+        unsigned next_earned = pet_life_pending(&next.life) + pet_life_meals(&next.life);
+        unsigned previous_earned = pet_life_pending(&s_state.life) + pet_life_meals(&s_state.life);
+        bool delivery = next.life.date / 100 == s_state.life.date / 100 ?
+            next_earned > previous_earned : next_earned > 0;
         s_before_stage = ate ? s_state.life.stage : s_before_stage;
         s_state = next;
+        if (delivery) { s_delivery_notice = true; s_delivery_at = lv_tick_get(); }
         if (ate) {
+            s_delivery_notice = false;
             s_eat_requested = false;
             s_action_at = lv_tick_get();
             pose(PET_POSE_EAT);
         } else if (delivery && s_pose == PET_POSE_SLEEP) pose(PET_POSE_IDLE);
         else if (changed && s_pose != PET_POSE_EAT && s_pose != PET_POSE_EVOLVE) draw_page();
+    }
+    if (s_delivery_notice && lv_tick_elaps(s_delivery_at) >= 4000) {
+        s_delivery_notice = false;
+        if (s_page == PAGE_HOME) draw_page();
     }
     uint32_t elapsed = lv_tick_elaps(s_pose_at);
     if (s_pose == PET_POSE_EAT && elapsed >= 1200) {
@@ -172,7 +248,9 @@ static void tick(lv_timer_t *timer)
     if (s_eat_requested && lv_tick_elaps(s_action_at) >= 2000) s_eat_requested = false;
     pet_view_frame(s_pet, s_pose, s_frame++);
     if (s_frame % 10 == 0) {
-        if (s_page == PAGE_PROGRESS) draw_page();
+        /* Do not rebuild the lunchbox on every timer: only a new snapshot or
+         * the fresh/stale transition changes it. Keep allocation churn low. */
+        if (s_page == PAGE_PROGRESS || (s_page == PAGE_LUNCH && s_lunch_recent != sync_recent())) draw_page();
         int soc = bsp_battery_soc();
         if (soc < 0) lv_label_set_text(s_battery, "--%");
         else lv_label_set_text_fmt(s_battery, "%d%%", soc);
@@ -188,6 +266,7 @@ void demo_pet_enter(void)
     s_pose = PET_POSE_IDLE;
     s_action_at = s_pose_at = lv_tick_get();
     s_eat_requested = false;
+    s_delivery_notice = false;
     s_route_preview = 0;
     s_archive = s_state.life.family.archive_count ? s_state.life.family.archive_count - 1 : 0;
     s_scr = ui_pixel_screen_create("数码伙伴");
@@ -226,6 +305,9 @@ void demo_pet_key(bsp_btn_t btn, bsp_btn_ev_t ev)
         if (s_pose == PET_POSE_EAT || s_pose == PET_POSE_EVOLVE || s_eat_requested) return;
         if (pet_life_pending(&s_state.life)) s_eat_requested = pet_service_eat();
         else pose(PET_POSE_HAPPY);
+    } else if (btn == BSP_BTN_OK && s_page == PAGE_LUNCH) {
+        s_page = PAGE_HOME;
+        draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_ROUTE) {
         s_route_preview = (s_route_preview + 1) % 4;
         draw_page();

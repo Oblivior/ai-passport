@@ -5,6 +5,7 @@ idf_component_register(
          "pet_model.c"
          "pet_store.c"
          "pet_life.c"
+         "pet_lunch.c"
          "pet_protocol.c"
          "pet_service.c"
          "pet_ble.c"

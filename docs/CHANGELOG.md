@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- Add a five-slot daily lunchbox with source-date Token snapshots, next-meal
+  progress, a daily cap, older-food accounting and stale-sync labels. Announce
+  newly earned food once without changing saves, protocols or rewards. Cover
+  boundary arithmetic and real LVGL page rendering with host regressions.
+
 - Localize the badge UI into Simplified Chinese, including pet forms, lunch,
   evolution, routes, family, connection status and demo menus. Embed a small
   OFL-licensed 14/20 px font subset and check glyph coverage and page bounds.

@@ -36,6 +36,10 @@ run_static_checks() {
         tests/test_pet_life.c main/pet_life.c main/pet_model.c main/pet_protocol.c \
         -o "${test_dir}/test_pet_life"
     "${test_dir}/test_pet_life"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_pet_lunch.c main/pet_lunch.c main/pet_life.c main/pet_model.c \
+        -o "${test_dir}/test_pet_lunch"
+    "${test_dir}/test_pet_lunch"
     python3 tests/test_pet_companion.py
     python3 tests/test_ui_fonts.py
     python3 tests/test_verify_firmware.py

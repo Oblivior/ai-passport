@@ -14,7 +14,7 @@ target_link_libraries(test_pet_view PRIVATE lvgl::lvgl)
 enable_testing()
 add_test(NAME pet_view_regression COMMAND test_pet_view)
 add_executable(test_pet_page test_pet_page.c ../../main/demo_pet.c ../../main/demo_ble.c ../../main/pet_view.c
-    ../../main/pet_life.c ../../main/pet_model.c ../../main/pet_ui_text.c
+    ../../main/pet_life.c ../../main/pet_lunch.c ../../main/pet_model.c ../../main/pet_ui_text.c
     ../../main/ui_pixel.c ../../main/ui_pixel_math.c
     ../../assets/fonts/passport_zh_14.c ../../assets/fonts/passport_zh_20.c)
 target_include_directories(test_pet_page PRIVATE stubs ../../main ../../components/bsp/include)

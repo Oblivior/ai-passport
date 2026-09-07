@@ -93,6 +93,14 @@ static void capture(const char *name)
     fclose(file);
 }
 
+static bool has_text(lv_obj_t *obj, const char *text)
+{
+    if (lv_obj_check_type(obj, &lv_label_class) && !strcmp(lv_label_get_text(obj), text)) return true;
+    for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++)
+        if (has_text(lv_obj_get_child(obj, i), text)) return true;
+    return false;
+}
+
 int main(void)
 {
     lv_init();
@@ -113,6 +121,10 @@ int main(void)
     demo_pet_enter();
     advance(300);
     capture("waiting");
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    advance(200);
+    capture("lunch-empty");
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     pet_usage_t usage = {.date = 20260907, .daily_goal = 1000, .tokens_today = 300};
     usage.earned[6] = 2;
     assert(pet_life_sync(&snapshot.life, &usage));
@@ -120,6 +132,19 @@ int main(void)
     snapshot.synced_at = lv_tick_get();
     advance(300);
     capture("lunch");
+    assert(has_text(lv_screen_active(), "饭盒送到啦，按确定开饭"));
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    advance(200);
+    capture("lunch-box");
+    assert(has_text(lv_screen_active(), "下份还差 101"));
+    assert(has_text(lv_screen_active(), "本日 2/5 份 · 已吃 0"));
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    advance(4200);
+    assert(!has_text(lv_screen_active(), "饭盒送到啦，按确定开饭"));
+    snapshot.revision++; /* Repeated sync must not announce duplicate food. */
+    snapshot.synced_at = lv_tick_get();
+    advance(300);
+    assert(!has_text(lv_screen_active(), "饭盒送到啦，按确定开饭"));
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     advance(300);
     capture("eating");
@@ -137,6 +162,9 @@ int main(void)
     capture("happy");
     advance(33000);
     capture("sleep");
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    advance(200);
+    capture("lunch-eaten");
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("progress");
@@ -195,6 +223,7 @@ int main(void)
         snprintf(name, sizeof(name), "zh-stage-%u", stage);
         capture(name);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(300);
         capture("zh-next-stage");
         demo_pet_exit();
@@ -230,6 +259,7 @@ int main(void)
         capture(route == PET_ROUTE_ARMOR ? "sleep-armor" : route == PET_ROUTE_WILD ? "sleep-wild" : "sleep-explorer");
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(200);
         capture("route-locked");
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
@@ -237,6 +267,34 @@ int main(void)
         capture("route-family");
         demo_pet_exit();
     }
+    /* Date provenance, large numbers, old food and full allowance on real LVGL. */
+    snapshot.life.date = 20260923;
+    snapshot.life.earned[22] = 2;
+    snapshot.life.eaten[22] = 1;
+    snapshot.life.earned[21] = 5;
+    snapshot.life.eaten[21] = 2;
+    snapshot.life.daily_goal = 1000000000000ULL;
+    snapshot.life.tokens_today = 1;
+    snapshot.synced_at = 0;
+    lv_screen_load(lv_obj_create(NULL));
+    demo_pet_enter();
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    advance(300);
+    capture("lunch-old-record");
+    assert(has_text(lv_screen_active(), "上次的饭盒"));
+    assert(has_text(lv_screen_active(), "另有旧饭 3 份，先吃旧饭"));
+    snapshot.synced_at = lv_tick_get();
+    snapshot.revision++;
+    snapshot.life.tokens_today = 9007199254740991ULL;
+    snapshot.life.earned[22] = 5;
+    advance(300);
+    capture("lunch-full");
+    assert(has_text(lv_screen_active(), "五份齐了，安心休息吧"));
+    assert(has_text(lv_screen_active(), "今日饭盒"));
+    advance(601000);
+    capture("lunch-stale");
+    assert(has_text(lv_screen_active(), "上次的饭盒"));
+    demo_pet_exit();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
     lv_screen_load(lv_obj_create(NULL));
     advance(3000);
