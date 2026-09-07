@@ -42,6 +42,8 @@ python3 tools/pet_companion.py --port /dev/cu.usbmodem101 --watch
 
 ### 无线饭盒（Phase 2）
 
+macOS 伴侣面向 12.3 及以上版本。扫描时在本机同时匹配服务与配对 ID，不记录附近其他设备的信息。
+
 在电脑的 Python 虚拟环境安装 `tools/requirements-pet-wireless.txt`。先停止 USB 同步窗口，再用连接设备的 USB 配对一次：
 
 ```bash

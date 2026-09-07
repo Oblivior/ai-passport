@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pet_wireless as w
@@ -64,6 +64,23 @@ class WirelessTests(unittest.TestCase):
 
 
 class ExchangeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cold_discovery_matches_name_and_service_locally(self):
+        key = bytes(range(32))
+        client = AsyncMock()
+        client.read_gatt_char.return_value = bytes([3]) + w.key_id(key).encode() + bytes(16)
+        scanner = Mock()
+        scanner.find_device_by_filter = AsyncMock(return_value=Mock())
+        with patch.dict(sys.modules, {"bleak": Mock(BleakClient=Mock(return_value=client), BleakScanner=scanner)}):
+            connected, challenge = await w.connect_device(key)
+        self.assertIs(connected, client)
+        call = scanner.find_device_by_filter.call_args
+        self.assertNotIn("service_uuids", call.kwargs)
+        predicate = call.args[0]
+        name = "AIPet-" + w.key_id(key)
+        self.assertTrue(predicate(Mock(name=name), Mock(local_name=name, service_uuids=[w.SERVICE])))
+        self.assertFalse(predicate(Mock(), Mock(local_name="other", service_uuids=[w.SERVICE])))
+        self.assertFalse(predicate(Mock(), Mock(local_name=name, service_uuids=[])))
+
     async def test_requires_authenticated_application_ack(self):
         key, challenge = bytes(range(32)), bytes(range(16))
         response = w.seal(key, challenge, 1, "PET2 ACK pending=2", b"PET3-S")

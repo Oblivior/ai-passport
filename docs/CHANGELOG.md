@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- Start the persistent radio after board bring-up and match badge identity plus
+  service locally during macOS discovery to handle cold scan name availability.
+
 - Add USB-provisioned AES-256-GCM wireless lunch delivery, replay protection,
   private desktop pairing files, a Pet Link status page and transport-aware sync
   feedback. Keep the pet save format and wired fallback unchanged.

@@ -76,8 +76,12 @@ def parse_reply(line, expected):
 async def connect_device(key):
     from bleak import BleakClient, BleakScanner
     expected = "AIPet-" + key_id(key)
+    # On this Mac a service-filtered cold scan did not discover the name in
+    # the scan response; an unfiltered scan did. Match both locally instead.
+    # Only the intended badge is retained/connected, never log nearby devices.
     device = await BleakScanner.find_device_by_filter(
-        lambda device, adv: adv.local_name == expected, service_uuids=[SERVICE], timeout=15)
+        lambda device, adv: (adv.local_name or device.name) == expected and
+        SERVICE in adv.service_uuids, timeout=15)
     if device is None:
         raise TimeoutError("paired Passport not found; check power, range and Bluetooth permission")
     client = BleakClient(device, timeout=15)

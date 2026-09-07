@@ -62,6 +62,9 @@ allowances reach the device. Invalid/missing data stops sync, not a fake zero.
 
 ### Wireless lunch delivery (Phase 2)
 
+The macOS companion targets 12.3 or later. Discovery matches the service and
+paired ID locally and does not log information about other nearby devices.
+
 Install `tools/requirements-pet-wireless.txt` in the companion virtual environment.
 Stop the USB watch process, then provision once over the connected device's USB:
 

@@ -126,7 +126,6 @@ void app_main(void) {
     bsp_display_backlight(100);
 
     // 其余外设单项失败不阻塞:菜单里标 [FAIL],其他项照常可测。
-    s_ok[0] = pet_service_start();
     s_ok[1] = true;                                    // Display 已确认可用
     s_ok[2] = (bsp_button_init(on_key, NULL) == ESP_OK);
     s_ok[3] = (bsp_audio_init() == ESP_OK);
@@ -134,6 +133,10 @@ void app_main(void) {
     s_ok[5] = true;                                    // 页面内按需初始化并显示错误
     s_ok[6] = true;
     s_ok[7] = true;
+
+    // Start the app-lifetime radio only after ADC/audio/battery bring-up.
+    // First USB provisioning naturally has this order; cold boots must too.
+    s_ok[0] = pet_service_start();
 
     if (bsp_lvgl_lock(1000)) { enter_menu(); bsp_lvgl_unlock(); }
 
