@@ -9,7 +9,7 @@ typedef struct {
     pet_house_t house;
     uint32_t crc;
 } house_record_t;
-_Static_assert(sizeof(pet_house_t) == 624, "Changing the v3 layout requires an explicit migration");
+_Static_assert(sizeof(pet_house_t) == 624, "Keep v3/v4 layout; migrate semantic fields explicitly");
 _Static_assert(sizeof(house_record_t) == 640, "Keep the on-flash record ABI stable");
 static const char *const KEYS[] = {"slot0", "slot1"};
 static uint32_t checksum_bytes(const void *data, size_t length)
@@ -32,24 +32,26 @@ int pet_house_store_load(pet_house_t *house, uint32_t *generation)
     esp_err_t err = nvs_open("ai_pet_v3", NVS_READONLY, &handle);
     if (err == ESP_ERR_NVS_NOT_FOUND) return 0;
     if (err != ESP_OK) return -1;
-    bool found = false, absent = true, incompatible = false;
+    bool found = false, absent = true, incompatible = false, migrated = false;
     for (unsigned i = 0; i < 2; i++) {
         house_record_t record = {0};
         size_t size = sizeof(record);
         err = nvs_get_blob(handle, KEYS[i], &record, &size);
         if (err != ESP_ERR_NVS_NOT_FOUND) absent = false;
         if (err != ESP_OK || size != sizeof(record) || record.crc != checksum(&record)) continue;
-        if (!pet_house_valid(&record.house)) { incompatible = true; continue; }
+        bool legacy = record.house.version == 3;
+        if (legacy ? !pet_house_upgrade_v3(&record.house) : !pet_house_valid(&record.house)) { incompatible = true; continue; }
         if (!found || (int32_t)(record.generation - *generation) > 0) {
             *house = record.house;
             *generation = record.generation;
+            migrated = legacy;
         }
         found = true;
     }
     nvs_close(handle);
     /* A CRC-valid future species/schema is not corruption: do not downgrade
      * to an older slot and overwrite it with this older catalog. */
-    return incompatible ? -1 : found ? 1 : absent ? 0 : -1;
+    return incompatible ? -1 : found ? (migrated ? 2 : 1) : absent ? 0 : -1;
 }
 bool pet_house_store_save(const pet_house_t *house, uint32_t *generation)
 {
@@ -97,9 +99,10 @@ bool pet_house_store_boot(pet_house_t *house, uint32_t *generation, bool *blocke
     *generation = 0;
     int loaded = pet_house_store_load(house, generation);
     *blocked = loaded < 0;
-    if (loaded == 1) {
+    if (loaded > 0) {
         pet_house_t cleaned = *house;
-        if (!pet_house_clear_legacy_archives(&cleaned)) return true;
+        unsigned removed = pet_house_clear_legacy_archives(&cleaned);
+        if (!removed && loaded != 2) return true;
         /* Persist through the normal CRC slots before publishing the cleanup.
          * On failure keep the original state and block writes until reboot;
          * never let a later sync silently save the uncleaned state as success. */

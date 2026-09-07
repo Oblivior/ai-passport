@@ -34,6 +34,9 @@ static int64_t s_activity;
 static bool s_started, s_pending;
 static uint8_t s_addr_type;
 static char s_name[16];
+static pet_meet_t s_meet;
+static int s_meet_error;
+static uint32_t s_meet_revision, s_meet_advertised, s_meet_refresh_at;
 
 /* 2b251000/1/2/3-8db0-4bdb-8b45-947717e4e6fa, little-endian NimBLE UUIDs. */
 #define UUID(n) BLE_UUID128_INIT(0xfa,0xe6,0xe4,0x17,0x77,0x94,0x45,0x8b,0xdb,0x4b,0xb0,0x8d,n,0x10,0x25,0x2b)
@@ -84,6 +87,11 @@ static const struct ble_gatt_svc_def SERVICES[] = {
 
 static int advertise(void)
 {
+    uint8_t greeting[PET_MEET_WIRE_SIZE];
+    lock();
+    bool meeting = pet_meet_encode(&s_meet, greeting);
+    uint32_t revision = s_meet_revision;
+    unlock();
     struct ble_hs_adv_fields fields = {0};
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     fields.uuids128 = (ble_uuid128_t *)&SERVICE;
@@ -94,6 +102,7 @@ static int advertise(void)
     scan.name = (const uint8_t *)s_name;
     scan.name_len = strlen(s_name);
     scan.name_is_complete = 1;
+    if (meeting) { scan.mfg_data = greeting; scan.mfg_data_len = sizeof(greeting); }
     if (!rc) rc = ble_gap_adv_rsp_set_fields(&scan);
     struct ble_gap_adv_params params = {0};
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
@@ -101,14 +110,26 @@ static int advertise(void)
     params.itvl_min = 800; /* 500-625 ms; no continuously fast advertising. */
     params.itvl_max = 1000;
     if (!rc) rc = ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &params, gap_event, NULL);
-    lock(); s_status.error = rc; unlock();
+    lock(); s_status.error = rc; if (!rc) s_meet_advertised = revision; unlock();
     return rc;
 }
 
 static int gap_event(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
-    if (event->type == BLE_GAP_EVENT_CONNECT && event->connect.status == 0) {
+    if (event->type == BLE_GAP_EVENT_DISC) {
+        struct ble_hs_adv_fields fields = {0};
+        if (!ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data) && fields.mfg_data) {
+            lock();
+            uint8_t before[PET_MEET_WIRE_SIZE] = {0}, after[PET_MEET_WIRE_SIZE] = {0};
+            pet_meet_encode(&s_meet, before);
+            pet_meet_receive(&s_meet, fields.mfg_data, fields.mfg_data_len, event->disc.rssi,
+                (uint32_t)(esp_timer_get_time() / 1000));
+            pet_meet_encode(&s_meet, after);
+            if (memcmp(before, after, sizeof(before))) s_meet_revision++;
+            unlock();
+        }
+    } else if (event->type == BLE_GAP_EVENT_CONNECT && event->connect.status == 0) {
         lock();
         s_conn = event->connect.conn_handle;
         s_generation++;
@@ -118,6 +139,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         s_activity = esp_timer_get_time();
         s_status.connected = true;
         s_status.authenticated = false;
+        if (s_meet.active) { s_meet.active = false; s_meet_error = BLE_HS_EBUSY; s_meet_revision++; }
         unlock();
     } else if (event->type == BLE_GAP_EVENT_DISCONNECT) {
         lock();
@@ -143,7 +165,8 @@ static void on_sync(void)
 static void on_reset(int reason)
 {
     lock(); s_status.ready = s_status.connected = s_status.authenticated = false;
-    s_status.error = reason; s_generation++; s_conn = BLE_HS_CONN_HANDLE_NONE; unlock();
+    s_status.error = reason; s_generation++; s_conn = BLE_HS_CONN_HANDLE_NONE;
+    s_meet.active = false; s_meet_error = reason; s_meet_revision++; unlock();
 }
 static void host_task(void *arg) { (void)arg; nimble_port_run(); nimble_port_freertos_deinit(); }
 
@@ -223,9 +246,80 @@ void pet_ble_status(pet_ble_status_t *out)
     lock(); *out = s_status; unlock();
 }
 
+void pet_ble_meet_start(unsigned species, unsigned stage, unsigned branch)
+{
+    if (!s_lock) return;
+    uint32_t nonce;
+    do { esp_fill_random(&nonce, sizeof(nonce)); } while (!nonce);
+    lock();
+    s_meet = (pet_meet_t){0};
+    s_meet_error = !s_status.ready ? BLE_HS_ENOTSYNCED : s_status.connected ? BLE_HS_EBUSY : 0;
+    if (!s_meet_error && !pet_meet_start(&s_meet, (uint32_t)(esp_timer_get_time() / 1000), nonce, species, stage, branch))
+        s_meet_error = BLE_HS_EINVAL;
+    s_meet_revision++;
+    unlock();
+}
+void pet_ble_meet_confirm(void)
+{
+    if (!s_lock) return;
+    lock();
+    uint8_t before[PET_MEET_WIRE_SIZE] = {0}, after[PET_MEET_WIRE_SIZE] = {0};
+    pet_meet_encode(&s_meet, before);
+    pet_meet_confirm(&s_meet, (uint32_t)(esp_timer_get_time() / 1000));
+    pet_meet_encode(&s_meet, after);
+    if (memcmp(before, after, sizeof(before))) s_meet_revision++;
+    unlock();
+}
+void pet_ble_meet_cancel(void)
+{
+    if (!s_lock) return;
+    lock();
+    if (s_meet.active) { s_meet.active = false; s_meet_revision++; }
+    unlock();
+}
+void pet_ble_meet_status(pet_meet_t *out, int *error)
+{
+    if (!s_lock) { memset(out, 0, sizeof(*out)); *error = -1; return; }
+    lock(); *out = s_meet; *error = s_meet_error; unlock();
+}
+static void meet_refresh(void)
+{
+    if (!s_started) return;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    lock();
+    uint8_t before[PET_MEET_WIRE_SIZE] = {0}, after[PET_MEET_WIRE_SIZE] = {0};
+    pet_meet_encode(&s_meet, before); pet_meet_tick(&s_meet, now); pet_meet_encode(&s_meet, after);
+    if (memcmp(before, after, sizeof(before))) s_meet_revision++;
+    bool active = s_meet.active, ready = s_status.ready, connected = s_status.connected;
+    bool dirty = s_meet_advertised != s_meet_revision;
+    unlock();
+    if (!ready) return;
+    if (active && !ble_gap_disc_active()) {
+        struct ble_gap_disc_params params = {0};
+        params.itvl = 160; params.window = 48; /* 100 ms interval / 30 ms active scan window. */
+        params.passive = 0; params.filter_duplicates = 0;
+        int rc = ble_gap_disc(s_addr_type, PET_MEET_WINDOW_MS, &params, gap_event, NULL);
+        if (rc) {
+            lock(); s_meet.active = false; s_meet_error = rc; s_meet_revision++; unlock();
+            active = false; dirty = true;
+        }
+    } else if (!active && ble_gap_disc_active()) ble_gap_disc_cancel();
+    if (dirty && !connected && now - s_meet_refresh_at >= 200U) {
+        s_meet_refresh_at = now;
+        /* Worker priority 3 is below NimBLE's host task. Never stop/restart
+         * advertising synchronously from its GAP callback or an LVGL button. */
+        int rc = ble_gap_adv_stop();
+        if (rc == 0 || rc == BLE_HS_EALREADY) rc = advertise();
+        if (rc) {
+            lock(); s_meet_error = rc; s_meet.active = false; unlock();
+        }
+    }
+}
+
 bool pet_ble_receive(char *line, size_t capacity)
 {
     if (!s_lock || !s_requests) return false;
+    meet_refresh();
     uint16_t terminate = BLE_HS_CONN_HANDLE_NONE;
     lock();
     if (s_conn != BLE_HS_CONN_HANDLE_NONE && esp_timer_get_time() - s_activity > 15000000) terminate = s_conn;

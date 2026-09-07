@@ -25,6 +25,7 @@ typedef struct {
     uint8_t choose_id; /* Zero feeds, otherwise selects this species. */
     uint32_t date, ticket;
     uint8_t score, attempts;
+    uint8_t branch_plus_one; /* Nonzero selects an explicit branch, never toggles. */
 } action_t;
 
 static SemaphoreHandle_t s_lock;
@@ -35,6 +36,8 @@ static bool s_storage_blocked;
 static bool s_bond_blocked;
 static uint32_t s_bond_generation;
 static bool s_wireless_request;
+static struct { uint32_t month, nonce, peer; uint8_t id, action; } s_meet_control;
+static uint32_t s_meet_month;
 static void publish(const pet_snapshot_t *state)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -71,6 +74,19 @@ static void reply(const pet_snapshot_t *state, const char *status)
 
 static void handle_line(pet_snapshot_t *state, const char *line)
 {
+    if (!s_wireless_request && !strcmp(line, "PET2 MEET")) {
+        printf("\nPET2 MEET active=%u seen=%u confirmed=%u complete=%u error=%d\n",
+            state->meeting.active, state->meeting.sightings, state->meeting.confirmed,
+            state->meeting.complete, state->meeting_error);
+        fflush(stdout);
+        return;
+    }
+    if (!s_wireless_request && !strcmp(line, "PET2 BRANCH")) {
+        printf("\nPET2 BRANCH active=%u branch=%u seen=%u\n", state->house.active_id,
+            pet_house_branch(&state->house, state->house.active_id), state->house.branch_seen_mask);
+        fflush(stdout);
+        return;
+    }
     if (!s_wireless_request && !strcmp(line, "PET2 BOND")) {
         printf("\nPET2 BOND version=1 active=%u points=%u date=%lu used=%u storage=%u\n",
             state->house.active_id, pet_bond_points(&state->bond, state->house.active_id),
@@ -114,8 +130,8 @@ static void handle_line(pet_snapshot_t *state, const char *line)
         unsigned adopted = 0;
         for (unsigned id = 1; id <= PET_PARTNER_CAPACITY; id++)
             if (pet_house_partner(&state->house, id)->adopted) adopted |= 1U << (id - 1);
-        snprintf(response, sizeof(response), "PET2 HOUSE version=3 active=%u adopted=%u storage=%u",
-            state->house.active_id, adopted, state->storage_ok);
+        snprintf(response, sizeof(response), "PET2 HOUSE version=%u active=%u adopted=%u storage=%u",
+            PET_HOUSE_VERSION, state->house.active_id, adopted, state->storage_ok);
         if (s_wireless_request) pet_ble_reply(response);
         else { printf("\n%s\n", response); fflush(stdout); }
         return;
@@ -138,6 +154,14 @@ static void handle_line(pet_snapshot_t *state, const char *line)
 
 static void process_action(pet_snapshot_t *state, const action_t *action)
 {
+    if (action->branch_plus_one) {
+        pet_house_t next = state->house;
+        unsigned points = state->bond_storage_ok && !s_bond_blocked ?
+            pet_bond_points(&state->bond, action->expected_id) : 0;
+        if (pet_house_branch_choose(&next, action->expected_id, action->month,
+            action->branch_plus_one - 1, points)) commit(state, &next);
+        return;
+    }
     if (!action->ticket) {
         pet_house_t next = state->house;
         if (pet_house_action(&next, action->expected_id, action->month, action->choose_id)) commit(state, &next);
@@ -171,6 +195,39 @@ static void process_action(pet_snapshot_t *state, const action_t *action)
     }
     state->revision++;
     publish(state); /* Result and points become visible only after the NVS commit. */
+}
+
+static void process_meeting(pet_snapshot_t *state)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    unsigned action = s_meet_control.action, id = s_meet_control.id;
+    uint32_t month = s_meet_control.month;
+    uint32_t nonce = s_meet_control.nonce, peer = s_meet_control.peer;
+    s_meet_control.action = 0;
+    xSemaphoreGive(s_lock);
+    if (action == PET_MEET_CANCEL) pet_ble_meet_cancel();
+    else if (state->storage_ok && id == state->house.active_id && month == state->house.life.date / 100) {
+        if (action == PET_MEET_START) {
+            unsigned stage = pet_house_stage(&state->house, id);
+            s_meet_month = month;
+            pet_ble_meet_start(id, stage, stage >= PET_STAGE_TITAN ? pet_house_branch(&state->house, id) : 0);
+        } else if (action == PET_MEET_CONFIRM) {
+            pet_meet_t current; int ignored;
+            pet_ble_meet_status(&current, &ignored);
+            if (current.nonce == nonce && current.peer == peer) pet_ble_meet_confirm();
+        }
+    }
+    pet_meet_t meeting; int error;
+    pet_ble_meet_status(&meeting, &error);
+    if (meeting.active && (!state->storage_ok || s_meet_month != state->house.life.date / 100 ||
+        meeting.species != state->house.active_id || meeting.stage != pet_house_stage(&state->house, state->house.active_id) ||
+        (meeting.stage >= PET_STAGE_TITAN && meeting.branch != pet_house_branch(&state->house, state->house.active_id)))) {
+        pet_ble_meet_cancel(); pet_ble_meet_status(&meeting, &error);
+    }
+    if (memcmp(&state->meeting, &meeting, sizeof(meeting)) || error != state->meeting_error) {
+        state->meeting = meeting; state->meeting_error = error; state->revision++;
+        publish(state);
+    }
 }
 
 static void worker(void *arg)
@@ -219,6 +276,7 @@ static void worker(void *arg)
             /* A delayed button must never feed another pet or next month's egg. */
             process_action(&state, &action);
         }
+        process_meeting(&state);
         char c;
         for (unsigned i = 0; i < PET_LINE_MAX && read(STDIN_FILENO, &c, 1) == 1; i++) {
             last_byte = now;
@@ -271,6 +329,30 @@ static bool queue_action(const pet_snapshot_t *shown, unsigned choose_id)
 }
 bool pet_service_eat(const pet_snapshot_t *shown) { return queue_action(shown, 0); }
 bool pet_service_choose(const pet_snapshot_t *shown, unsigned id) { return pet_catalog_find(id) && queue_action(shown, id); }
+bool pet_service_branch(const pet_snapshot_t *shown, unsigned branch)
+{
+    if (!s_actions || !shown || !shown->ready || branch > 1 ||
+        !pet_catalog_branch_supported(shown->house.active_id)) return false;
+    action_t action = {.month = shown->house.life.date / 100, .expected_id = shown->house.active_id,
+        .branch_plus_one = branch + 1};
+    return xQueueSend(s_actions, &action, 0) == pdTRUE;
+}
+bool pet_service_meet(const pet_snapshot_t *shown, pet_meet_action_t action)
+{
+    if (!s_lock || action < PET_MEET_CANCEL || action > PET_MEET_CONFIRM ||
+        (action != PET_MEET_CANCEL && (!shown || !shown->ready || !shown->house.active_id))) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (action == PET_MEET_CONFIRM && s_meet_control.action == PET_MEET_CANCEL) {
+        xSemaphoreGive(s_lock); return false;
+    }
+    s_meet_control.action = action;
+    s_meet_control.id = shown ? shown->house.active_id : 0;
+    s_meet_control.month = shown ? shown->house.life.date / 100 : 0;
+    s_meet_control.nonce = shown ? shown->meeting.nonce : 0;
+    s_meet_control.peer = shown ? shown->meeting.peer : 0;
+    xSemaphoreGive(s_lock);
+    return true;
+}
 bool pet_service_train(const pet_snapshot_t *shown, unsigned score, unsigned attempts, uint32_t ticket)
 {
     if (!s_actions || !shown || !shown->ready || !ticket || attempts > 3 || score > attempts * 2) return false;

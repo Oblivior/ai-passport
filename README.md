@@ -7,7 +7,7 @@ USB or application-encrypted BLE. It is a playable prototype, not a finished pro
 
 ## Play
 
-Open the Digimon entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, evolution catalog, partner house, training and family. Click
+Open the Digimon entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, evolution catalog, partner house, encounters, branches, training and family. Click
 OK once to eat an earned meal; an empty box makes OK pet/wake the character,
 without growth. Eating lasts 1.2 seconds and evolution lasts 1.8 seconds. Idle
 pets sleep after 30 seconds without penalties. On family, OK returns home when
@@ -29,6 +29,49 @@ catch-up credits food source dates, but never dates before that partner's adopti
 older inventory counts as one adoption day, not many days of companionship.
 The first-ever sync ignores earlier history. Unclaimed
 food stays until the next monthly sync, when it expires.
+
+### Nearby greetings (experimental)
+
+Both badges open encounters (UP four times from home), then press OK to search
+for up to 60 seconds. Keep them nearby; after at least two strong sightings,
+each owner presses OK to greet. The result shows both pets and a pairing-specific
+message. UP/DOWN or leaving the app cancels; timeout and radio errors can retry.
+There is no collision sensor or MCU-readable NFC interface, so this is proximity
+plus explicit confirmation, not a physical bump detector. Initial computer pairing
+is required by the existing radio service. Food sync takes priority and cancels an
+active search if the computer connects. No server, account or additional pairing
+key is needed between badges.
+
+The bounded active scan uses NimBLE observer mode (100 ms interval / 30 ms window).
+Only while searching, a 12-byte experimental manufacturer payload (`ffff`, marker
+`a1`, packed species/stage/branch, big-endian session nonce and confirmed peer nonce)
+is added to the existing scan response. The existing service and pairing-name
+advertisements remain unchanged. RSSI >= -65 is a heuristic, not distance proof.
+Peer loss after five seconds clears pending consent. The short-lived public packet
+contains no Token values, prompts or keys; it is **not authenticated identity** and
+can be imitated. It cannot feed, award bond, change evolution or write archives.
+The greeting is best-effort, not an atomic transaction across two devices; remain
+on the result briefly so the other badge can receive your response. Completed
+greetings are not persisted. The USB-only `PET2 MEET` diagnostic is read-only.
+Two-physical-badge acceptance and scan-mode battery measurements remain required.
+
+### Optional branching evolution
+
+Agumon's dark route unlocks at 30 lifetime bond. From home, press UP three times
+to visit branches, OK to browse, UP/DOWN to choose, and OK twice to confirm.
+The normal route never requires bond. A choice made early takes effect at stage 5:
+SkullGreymon instead of MetalGreymon, then BlackWarGreymon at stage 6. This is an
+explicit fan-game route, not a claim of an official evolution rule or a penalty
+for Token usage. Both routes use the existing meal/day thresholds. Returning to
+the normal route retains growth; choosing the dark route never spends bond.
+Gabumon and Patamon retain their existing complete standard lines.
+
+Home, training, previews and monthly family records use the selected form.
+Agumon's catalog includes seven normal and two dark forms; previews do not unlock
+discoveries. Dark discoveries persist across months, independently of normal
+discoveries. A new month's egg defaults to the normal route; old family records
+retain the form actually reached. The USB-only `PET2 BRANCH` diagnostic reports
+the current choice and lifetime dark discoveries; no remote mutation is exposed.
 
 ### Training and bond
 
@@ -52,7 +95,7 @@ and date when the result is committed. Offline games are practice only; they
 are not queued for later rewards. A day changes only through normal host sync.
 The result page reports saved points, practice, stale identity/date or a retryable
 save error. Retrying a result cannot award it twice. Bond uses its own 28-byte,
-version-1 state in CRC-protected `ai_pet_bond` slots, without rewriting the v3 pet
+version-1 state in CRC-protected `ai_pet_bond` slots, without rewriting the pet
 save. Corrupt/future bond saves block bond writes but do not reset pet growth.
 USB-only `PET2 BOND` reports points, reward date/count and storage health;
 there is no remote training or bond mutation command.
@@ -96,15 +139,15 @@ raised forms from previews. Discoveries survive monthly rollover; browsing alone
 never unlocks a form. There is no species-changing skin operation.
 
 Existing v2 live progress migrates to Agumon without losing its food or days.
-Startup removes obsolete robot archives (`species_id=0`) from the active v3 save,
+Startup removes obsolete robot archives (`species_id=0`) from the active save,
 including during legacy migration. Current partners, food, growth, discoveries
 and real Digimon archives remain intact. Original legacy namespaces and private
 upgrade backups remain available for recovery. If cleanup cannot be committed,
 the original state is retained and writes are blocked until a successful reboot.
 The existing
 food-intensity `family.route` values and ROUTE diagnostics remain for compatibility
-but describe the shared usage ledger, not a species or a branch. No SkullGreymon
-branch is implemented, and high Token usage is not treated as bad care.
+but describe the shared usage ledger, not a species or a branch. High Token
+usage is not treated as bad care; the optional dark route is explicitly chosen.
 
 The embedded graphics are hand-authored pixel fan art, not official sprites or
 franchise-original characters. Character rights are not granted by the code
@@ -203,13 +246,20 @@ response AAD is `PET3-S` plus challenge. Frame order: nonce, ciphertext, tag.
 A successful GATT write is not delivery: require the authenticated application
 ACK. Daily cumulative entitlements and commit-before-ACK remain unchanged.
 
-New `ai_pet_v3` alternating CRC-protected slots store the shared pantry and
-independent partners. Legacy `ai_pet`, `ai_pet_v2` and pairing saves are not written.
-Only an absent v3 save allows migration; unreadable or incompatible saves block
+The historical `ai_pet_v3` namespace now stores version-4 states in alternating
+CRC-protected slots. The 624-byte layout is unchanged: previously reserved bytes
+hold the monthly branch choice, lifetime dark discoveries and archived branch.
+Validated v3 records migrate by changing only their version, committed once
+before allowing mutations. Failed migration blocks writes until reboot; unknown
+versions or branch values fail closed. Legacy `ai_pet`, `ai_pet_v2`, bond and
+pairing namespaces are not rewritten by migration. Only absent house records
+allow importing v1/v2; unreadable or incompatible saves block
 writes instead of silently resetting. One corrupt slot can recover from the other;
 CRC-valid unknown species block downgrade. A failed commit keeps the live state
 unchanged. Family holds the latest 12 individual records, not 12 months.
-Downgrading to v2 resumes its old snapshot, not subsequent v3 progress; do not play
+Older v3 firmware rejects CRC-valid v4 records. Do not downgrade just the app
+and expect it to read new saves; deliberate rollback requires the private backup.
+Downgrading to v2 resumes its old snapshot, not subsequent house progress; do not play
 on both versions and expect their diverging saves to merge. Back up before upgrade.
 Use app-only updates at `0x10000` after checking the partition table. Never erase
 flash; preserve device identity and Recovery.
@@ -221,6 +271,8 @@ the [existing non-blocking console](https://docs.espressif.com/projects/esp-idf/
 PET2 STATUS
 PET2 ROUTE
 PET2 HOUSE
+PET2 BRANCH
+PET2 MEET
 PET2 BOND
 PET2 SYNC YYYYMMDD <tokens_today> <daily_goal> <31 digits, each 0..5>
 ```
@@ -267,7 +319,7 @@ ROUTE is read-only and returns `route`, `locked` and `stage`; route IDs are
 0=CORE (unformed), 1=ARMOR, 2=WILD, 3=EXPLORER. Existing STATUS/SYNC fields stay unchanged.
 
 Remaining: Bits settlement and certified feature-based routes, independent Flux
-adapter, branching evolution, encounters, sound and production sprite artwork.
+adapter, additional branch routes, two-badge encounter acceptance, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
 Concurrent Wi-Fi scans and the 96 KB recording demo with the persistent radio

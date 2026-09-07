@@ -10,6 +10,8 @@ static unsigned bond_saves;
 static bool fail_bond_save;
 static action_t queued;
 static int marker;
+static pet_meet_t radio_meet;
+static unsigned radio_nonce;
 QueueHandle_t xQueueCreate(unsigned count, size_t size) { assert(count == 1 && size == sizeof(action_t)); return &marker; }
 int xQueueSend(QueueHandle_t q, const void *item, uint32_t wait) { (void)q; (void)wait; queued = *(const action_t *)item; return pdTRUE; }
 int xQueueReceive(QueueHandle_t q, void *item, uint32_t wait) { (void)q; (void)item; (void)wait; return 0; }
@@ -33,6 +35,11 @@ bool pet_ble_pair(const char *key) { (void)key; return false; }
 void pet_ble_status(pet_ble_status_t *out) { memset(out, 0, sizeof(*out)); }
 bool pet_ble_receive(char *line, size_t capacity) { (void)line; (void)capacity; return false; }
 void pet_ble_reply(const char *line) { snprintf(response, sizeof(response), "%s", line); }
+void pet_ble_meet_start(unsigned id, unsigned stage, unsigned branch)
+{ assert(pet_meet_start(&radio_meet, 1000, ++radio_nonce, id, stage, branch)); }
+void pet_ble_meet_confirm(void) { pet_meet_confirm(&radio_meet, 1000); }
+void pet_ble_meet_cancel(void) { radio_meet.active = false; }
+void pet_ble_meet_status(pet_meet_t *out, int *error) { *out = radio_meet; *error = 0; }
 bool pet_house_store_boot(pet_house_t *house, uint32_t *generation, bool *blocked)
 { pet_house_init(house, NULL); *generation = 0; *blocked = false; return true; }
 bool pet_house_store_save(const pet_house_t *house, uint32_t *generation)
@@ -123,5 +130,40 @@ int main(void)
     handle_line(&state, "PET2 BOND");
     assert(!strncmp(response, "PET2 REJECTED ", 14));
     assert(!pet_service_train(&shown, 6, 1, 9) && !pet_service_train(&shown, 0, 0, 0));
+    original = state.house; shown = state;
+    assert(pet_service_branch(&shown, 1)); process_action(&state, &queued);
+    assert(!memcmp(&original, &state.house, sizeof(original))); /* Blocked bond cannot unlock. */
+    s_bond_blocked = false; state.bond.points[0] = 30; state.bond_storage_ok = true;
+    fail_save = true; process_action(&state, &queued);
+    assert(!state.storage_ok && !state.house.branch_mask);
+    fail_save = false; process_action(&state, &queued);
+    assert(state.storage_ok && state.house.branch_mask == 1);
+    before = saves; process_action(&state, &queued); assert(saves == before); /* Exact set, not toggle. */
+    shown = state; shown.house.life.date = 20261001;
+    assert(pet_service_branch(&shown, 0)); process_action(&state, &queued);
+    assert(state.house.branch_mask == 1);
+    shown = state; shown.house.active_id = PET_GABUMON;
+    assert(!pet_service_branch(&shown, 1));
+    shown = state; state.bond_storage_ok = false;
+    assert(pet_service_branch(&shown, 0)); process_action(&state, &queued);
+    assert(!state.house.branch_mask && !memcmp(&original, &state.house, sizeof(original)));
+    handle_line(&state, "PET2 BRANCH"); assert(!strncmp(response, "PET2 REJECTED ", 14));
+    shown = state; before = saves; previous_bond_saves = bond_saves;
+    assert(pet_service_meet(&shown, PET_MEET_START));
+    assert(pet_service_meet(NULL, PET_MEET_CANCEL));
+    assert(!pet_service_meet(&shown, PET_MEET_CONFIRM));
+    process_meeting(&state); assert(!state.meeting.active); /* Exit cancels pending start. */
+    assert(pet_service_meet(&shown, PET_MEET_START)); process_meeting(&state);
+    assert(state.meeting.active && state.meeting.species == PET_AGUMON);
+    shown = state; shown.meeting.nonce++;
+    radio_meet.peer = 42; radio_meet.sightings = 2; radio_meet.seen_at = 1000;
+    assert(pet_service_meet(&shown, PET_MEET_CONFIRM)); process_meeting(&state);
+    assert(!state.meeting.confirmed); /* Stale UI must not greet a new session. */
+    shown = state; assert(pet_service_meet(&shown, PET_MEET_CONFIRM)); process_meeting(&state);
+    assert(state.meeting.confirmed);
+    assert(pet_house_choose(&state.house, PET_GABUMON)); process_meeting(&state);
+    assert(!state.meeting.active && saves == before && bond_saves == previous_bond_saves);
+    assert(!pet_service_meet(&shown, 0));
+    handle_line(&state, "PET2 MEET"); assert(!strncmp(response, "PET2 REJECTED ", 14));
     puts("pet_service: PASS (production transactions, commit-before-ACK, replay, failure preservation, stale UI actions)");
 }

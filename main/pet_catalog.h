@@ -16,3 +16,7 @@ const pet_species_info_t *pet_catalog_find(unsigned id);
 const char *pet_catalog_form(unsigned id, unsigned stage);
 unsigned pet_catalog_meals(unsigned stage);
 unsigned pet_catalog_days(unsigned stage);
+/* Branch 1 is the optional Agumon dark fan-game route, not a care penalty. */
+#define PET_BRANCH_BOND 30U
+bool pet_catalog_branch_supported(unsigned id);
+const char *pet_catalog_branch_form(unsigned id, unsigned stage, unsigned branch);

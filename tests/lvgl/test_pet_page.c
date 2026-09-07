@@ -18,7 +18,13 @@ static pet_ble_status_t ble_status;
 void pet_ble_status(pet_ble_status_t *out) { *out = ble_status; }
 static uint16_t framebuffer[240 * 320];
 
-bool pet_service_snapshot(pet_snapshot_t *out) { *out = snapshot; return true; }
+bool pet_service_snapshot(pet_snapshot_t *out)
+{
+    pet_meet_t before = snapshot.meeting;
+    pet_meet_tick(&snapshot.meeting, lv_tick_get());
+    if (memcmp(&before, &snapshot.meeting, sizeof(before))) snapshot.revision++;
+    *out = snapshot; return true;
+}
 bool pet_service_start(void) { return true; }
 bool pet_service_choose(const pet_snapshot_t *shown, unsigned id)
 {
@@ -34,6 +40,27 @@ bool pet_service_eat(const pet_snapshot_t *shown)
     bool ate = pet_house_eat(&snapshot.house);
     if (ate) snapshot.revision++;
     return ate;
+}
+bool pet_service_branch(const pet_snapshot_t *shown, unsigned branch)
+{
+    if (fail_ui_save) { snapshot.storage_ok = false; return true; }
+    bool changed = pet_house_branch_choose(&snapshot.house, shown->house.active_id, shown->house.life.date / 100,
+        branch, snapshot.bond_storage_ok ? pet_bond_points(&snapshot.bond, shown->house.active_id) : 0);
+    if (changed) { snapshot.revision++; snapshot.storage_ok = true; }
+    return changed;
+}
+bool pet_service_meet(const pet_snapshot_t *shown, pet_meet_action_t action)
+{
+    static uint32_t nonce;
+    if (action == PET_MEET_CANCEL) snapshot.meeting.active = false;
+    else if (action == PET_MEET_START) {
+        unsigned id = shown->house.active_id, stage = pet_house_stage(&shown->house, id);
+        pet_meet_start(&snapshot.meeting, lv_tick_get(), ++nonce, id, stage,
+            stage >= PET_STAGE_TITAN ? pet_house_branch(&shown->house, id) : 0);
+        snapshot.meeting_error = 0;
+    } else pet_meet_confirm(&snapshot.meeting, lv_tick_get());
+    snapshot.revision++;
+    return true;
 }
 bool pet_service_train(const pet_snapshot_t *shown, unsigned score, unsigned attempts, uint32_t ticket)
 {
@@ -309,7 +336,9 @@ static void partner_scenarios(void)
     assert(pet_house_meals(&snapshot.house, PET_AGUMON) == 7);
     assert(pet_house_meals(&snapshot.house, PET_GABUMON) == 0 && pet_life_pending(&snapshot.house.life) == 4);
     /* Back to the original partner: neither reset nor a false evolution. */
-    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); /* Skip the new training page. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); /* Skip training, branch and meeting pages. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     advance(200); capture("partner-agumon-resting");
@@ -319,6 +348,8 @@ static void partner_scenarios(void)
     assert(snapshot.house.active_id == PET_AGUMON && pet_house_meals(&snapshot.house, PET_AGUMON) == 7);
     assert(!has_text(lv_screen_active(), "要进化啦！"));
     /* Failed adoption retains the partner and allows a visible retry. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
@@ -426,6 +457,111 @@ static void perfect_training(void)
     }
     advance(300);
     assert(has_text(lv_screen_active(), "完美配合！"));
+}
+static void branch_scenarios(void)
+{
+    for (unsigned stage = PET_STAGE_SPARK; stage <= PET_STAGE_APEX; stage++) {
+        set_stage(PET_AGUMON, stage);
+        pet_bond_init(&snapshot.bond); snapshot.bond.points[0] = 29;
+        snapshot.bond.reward_date = snapshot.house.life.date;
+        snapshot.storage_ok = snapshot.bond_storage_ok = true;
+        snapshot.synced_at = lv_tick_get();
+        pet_house_t before = snapshot.house;
+        empty_screen(); enter_pet();
+        for (unsigned i = 0; i < 3; i++) demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        advance(300); assert(has_text(lv_screen_active(), "进化分支"));
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        advance(300); capture("branch-locked");
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+        assert(has_text(lv_screen_active(), "一起训练，亲密 30 解锁"));
+        assert(!memcmp(&before, &snapshot.house, sizeof(before)));
+        snapshot.bond.points[0] = 30; snapshot.revision++; advance(300);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300); capture("branch-confirm");
+        assert(has_text(lv_screen_active(), "就走这条路线？"));
+        demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300); /* Cancel without changing cursor. */
+        assert(!snapshot.house.branch_mask);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+        fail_ui_save = true; demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(2300);
+        capture("branch-save-error");
+        assert(!snapshot.house.branch_mask && has_text(lv_screen_active(), "保存失败，请重试"));
+        fail_ui_save = false; demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(4000);
+        assert(snapshot.house.branch_mask == 1 && snapshot.storage_ok);
+        assert(!memcmp(&before.life, &snapshot.house.life, sizeof(before.life)));
+        assert(has_text(lv_screen_active(), pet_catalog_branch_form(PET_AGUMON, stage, 1)));
+        char name[40]; snprintf(name, sizeof(name), "branch-home-%u", stage); capture(name);
+        home_geometry(pet_ui_progress(stage, pet_house_meals(&snapshot.house, PET_AGUMON),
+            pet_house_days(&snapshot.house, PET_AGUMON)).percent);
+        demo_pet_exit(); empty_screen(); enter_pet(); advance(300); /* Reload confirmed selection. */
+        assert(has_text(lv_screen_active(), pet_catalog_branch_form(PET_AGUMON, stage, 1)));
+        if (stage == PET_STAGE_TITAN) {
+            demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+            advance(300); assert(has_text(lv_screen_active(), "丧尸暴龙兽"));
+            perfect_training(); capture("branch-training");
+            demo_pet_exit(); empty_screen(); enter_pet();
+        }
+        if (stage == PET_STAGE_APEX) {
+            pet_usage_t usage = {.date = 20261001, .daily_goal = 1000};
+            assert(pet_house_sync(&snapshot.house, &usage)); snapshot.revision++;
+            advance(300); demo_pet_exit(); empty_screen();
+            assert(pet_house_choose(&snapshot.house, PET_AGUMON)); snapshot.revision++;
+            enter_pet(); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300);
+            capture("branch-family");
+            assert(has_text(lv_screen_active(), "我的家族图鉴"));
+            assert(snapshot.house.archive[0].branch == 1 && snapshot.house.branch_mask == 0);
+            demo_pet_exit(); empty_screen(); enter_pet();
+        }
+        for (unsigned i = 0; i < 3; i++) demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+        if (snapshot.house.branch_mask) demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); /* Explicit standard choice. */
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+        advance(4000); assert(!snapshot.house.branch_mask);
+        demo_pet_exit();
+    }
+    set_stage(PET_GABUMON, PET_STAGE_SCOUT);
+    empty_screen(); enter_pet();
+    for (unsigned i = 0; i < 3; i++) demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    advance(300); capture("branch-other-partner");
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+    assert(has_text(lv_screen_active(), "加布兽"));
+    demo_pet_exit();
+}
+static void meeting_scenarios(void)
+{
+    for (unsigned id = PET_AGUMON; id <= PET_PATAMON; id++) {
+        set_stage(id, PET_STAGE_SCOUT); snapshot.storage_ok = true;
+        pet_house_t before = snapshot.house;
+        empty_screen(); enter_pet();
+        for (unsigned i = 0; i < 4; i++) demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        advance(300); capture("meet-lobby");
+        assert(has_text(lv_screen_active(), "伙伴相遇"));
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300); capture("meet-search");
+        assert(snapshot.meeting.active);
+        pet_meet_t peer;
+        assert(pet_meet_start(&peer, lv_tick_get(), 90000, PET_GABUMON, 6, 0));
+        uint8_t frame[PET_MEET_WIRE_SIZE]; assert(pet_meet_encode(&peer, frame));
+        assert(pet_meet_receive(&snapshot.meeting, frame, sizeof(frame), -40, lv_tick_get()));
+        advance(200);
+        assert(pet_meet_receive(&snapshot.meeting, frame, sizeof(frame), -40, lv_tick_get()));
+        snapshot.revision++; advance(300); capture("meet-found");
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+        assert(snapshot.meeting.confirmed && !snapshot.meeting.complete);
+        capture("meet-wait-confirm");
+        peer.peer = snapshot.meeting.nonce; peer.sightings = 2; peer.seen_at = lv_tick_get();
+        assert(pet_meet_confirm(&peer, lv_tick_get())); assert(pet_meet_encode(&peer, frame));
+        assert(pet_meet_receive(&snapshot.meeting, frame, sizeof(frame), -40, lv_tick_get()));
+        snapshot.revision++; advance(500);
+        capture("meet-complete");
+        assert(has_text(lv_screen_active(), "交到新朋友啦！"));
+        assert(has_text(lv_screen_active(), pet_meet_greeting(id, PET_GABUMON)));
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300); assert(!snapshot.meeting.active);
+        assert(!memcmp(&before, &snapshot.house, sizeof(before)));
+        for (unsigned i = 0; i < 4; i++) demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(60100); capture("meet-timeout");
+        assert(!snapshot.meeting.active);
+        assert(has_text(lv_screen_active(), "确定再找 · 上下返回"));
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+        assert(snapshot.meeting.active); demo_pet_exit(); assert(!snapshot.meeting.active);
+    }
 }
 static void training_scenarios(void)
 {
@@ -603,21 +739,26 @@ int main(void)
     capture("digimon-lineage");
     assert(has_text(lv_screen_active(), "亚古兽进化图鉴"));
     pet_house_t before_preview = snapshot.house;
-    for (unsigned i = 0; i < PET_STAGE_COUNT; i++) {
+    for (unsigned i = 0; i < 9; i++) {
         demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
         advance(200);
         char preview_name[32];
         snprintf(preview_name, sizeof(preview_name), "digimon-lineage-%u", i);
         capture(preview_name);
-        pet_stage_t preview = (snapshot.house.life.stage + i + 1) % PET_STAGE_COUNT;
-        assert(has_text(lv_screen_active(), pet_ui_stage_name(preview)));
-        assert(has_text(lv_screen_active(), preview <= snapshot.house.life.stage ? "已经养成 · 已解锁" : "未来形态预览"));
+        unsigned index = (snapshot.house.life.stage + i + 1) % 9;
+        unsigned branch = index >= PET_STAGE_COUNT;
+        unsigned preview = branch ? PET_STAGE_TITAN + index - PET_STAGE_COUNT : index;
+        assert(has_text(lv_screen_active(), pet_catalog_branch_form(PET_AGUMON, preview, branch)));
+        assert(has_text(lv_screen_active(), branch ? "分支预览 · 尚未养成" :
+            preview <= snapshot.house.life.stage ? "已经养成 · 已解锁" : "未来形态预览"));
     }
     assert(!memcmp(&before_preview, &snapshot.house, sizeof(before_preview)));
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
-    /* Training is now between partner house and family. */
+    /* Meeting, branch and training are between partner house and family. */
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(200);
     assert(has_text(lv_screen_active(), "我的家族图鉴"));
     capture("family");
@@ -701,6 +842,8 @@ int main(void)
         capture("route-locked");
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(200);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(200);
         assert(has_text(lv_screen_active(), "我的家族图鉴"));
@@ -741,6 +884,8 @@ int main(void)
     home_progress_scenarios();
     archive_key_scenarios();
     training_scenarios();
+    branch_scenarios();
+    meeting_scenarios();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
     empty_screen();
     advance(3000);

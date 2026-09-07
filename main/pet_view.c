@@ -191,6 +191,11 @@ void pet_view_frame(lv_obj_t *pet, pet_pose_t pose, unsigned frame)
 lv_obj_t *pet_view_create_digimon_pose(lv_obj_t *parent, unsigned species_id, pet_stage_t stage,
                                       int x, int y, pet_pose_t pose)
 {
+    return pet_view_create_branch_pose(parent, species_id, stage, 0, x, y, pose);
+}
+lv_obj_t *pet_view_create_branch_pose(lv_obj_t *parent, unsigned species_id, pet_stage_t stage,
+                                     unsigned branch, int x, int y, pet_pose_t pose)
+{
     const pet_species_info_t *species = pet_catalog_find(species_id);
     if (!species || species->artwork >= sizeof(digimon_sprites) / sizeof(digimon_sprites[0])) return NULL;
     if ((unsigned)stage >= PET_STAGE_COUNT) stage = PET_STAGE_EGG;
@@ -203,7 +208,8 @@ lv_obj_t *pet_view_create_digimon_pose(lv_obj_t *parent, unsigned species_id, pe
     lv_obj_set_style_pad_all(pet, 0, 0);
     lv_obj_t *sprite = lv_image_create(pet);
     unsigned variant = pose == PET_POSE_SLEEP ? 2 : pose == PET_POSE_EAT ? 1 : 0;
-    lv_image_set_src(sprite, &digimon_sprites[species->artwork][stage][variant]);
+    lv_image_set_src(sprite, pet_catalog_branch_supported(species_id) && branch == 1 && stage >= PET_STAGE_TITAN ?
+        &digimon_branch_sprites[stage - PET_STAGE_TITAN][variant] : &digimon_sprites[species->artwork][stage][variant]);
     lv_image_set_pivot(sprite, 0, 0);
     lv_image_set_scale(sprite, 768); /* Exact 3x nearest-neighbor, 96 x 84. */
     lv_image_set_antialias(sprite, false);

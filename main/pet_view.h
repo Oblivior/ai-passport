@@ -18,3 +18,5 @@ void pet_view_frame(lv_obj_t *pet, pet_pose_t pose, unsigned frame);
 /* Species-specific fan-art; the caller supplies a stable catalog ID. */
 lv_obj_t *pet_view_create_digimon_pose(lv_obj_t *parent, unsigned species_id, pet_stage_t stage,
                                       int x, int y, pet_pose_t pose);
+lv_obj_t *pet_view_create_branch_pose(lv_obj_t *parent, unsigned species_id, pet_stage_t stage,
+                                     unsigned branch, int x, int y, pet_pose_t pose);

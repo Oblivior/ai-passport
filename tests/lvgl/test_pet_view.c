@@ -60,10 +60,13 @@ int main(void)
         lv_tick_inc(400);
         lv_timer_handler();
     }
-    for (unsigned line = 0; line < PET_CATALOG_COUNT; line++)
+    for (unsigned line = 0; line <= PET_CATALOG_COUNT; line++)
     for (int stage = 0; stage < PET_STAGE_COUNT; stage++) {
+        bool dark = line == PET_CATALOG_COUNT;
+        if (dark && stage < PET_STAGE_TITAN) continue;
         for (int pose = PET_POSE_IDLE; pose <= PET_POSE_EVOLVE; pose++) {
-            lv_obj_t *pet = pet_view_create_digimon_pose(panel, pet_catalog_at(line)->id, (pet_stage_t)stage, 49, 48, (pet_pose_t)pose);
+            lv_obj_t *pet = pet_view_create_branch_pose(panel, dark ? PET_AGUMON : pet_catalog_at(line)->id,
+                (pet_stage_t)stage, dark, 49, 48, (pet_pose_t)pose);
             lv_obj_update_layout(pet);
             lv_refr_now(NULL);
             if (pose == PET_POSE_IDLE) {
@@ -71,7 +74,8 @@ int main(void)
                  * Compare every opaque source pixel at its actual 3x center. */
                 lv_area_t pos;
                 lv_obj_get_coords(pet, &pos);
-                const uint8_t *data = digimon_sprites[pet_catalog_at(line)->artwork][stage][0].data;
+                const uint8_t *data = dark ? digimon_branch_sprites[stage - PET_STAGE_TITAN][0].data :
+                    digimon_sprites[pet_catalog_at(line)->artwork][stage][0].data;
                 for (unsigned y = 0; y < 28; y++) for (unsigned x = 0; x < 32; x++) {
                     unsigned at = y * 32 + x;
                     if (!data[32 * 28 * 2 + at]) continue;

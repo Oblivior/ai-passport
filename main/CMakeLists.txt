@@ -11,6 +11,7 @@ idf_component_register(
          "pet_bond.c"
          "pet_bond_store.c"
          "pet_training.c"
+         "pet_meet.c"
          "pet_lunch.c"
          "pet_protocol.c"
          "pet_service.c"

@@ -10,7 +10,7 @@ class UIFontTests(unittest.TestCase):
     def test_fixed_ui_copy_has_both_font_sizes(self):
         chars = set()
         for path in sorted((ROOT / "main").glob("*.c")):
-            if not re.fullmatch(r"(demo_.*|main|pet_ui_text|pet_catalog)", path.stem):
+            if not re.fullmatch(r"(demo_.*|main|pet_ui_text|pet_catalog|pet_meet)", path.stem):
                 continue
             for literal in re.findall(r'"(?:[^"\\]|\\.)*"', path.read_text()):
                 chars.update(c for c in literal if ord(c) > 127)

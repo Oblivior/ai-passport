@@ -3,6 +3,52 @@
 #include <stdio.h>
 #include <string.h>
 
+static void branches(void)
+{
+    pet_house_t h;
+    pet_house_init(&h, NULL);
+    assert(pet_house_choose(&h, PET_AGUMON));
+    pet_house_t before = h;
+    assert(!pet_house_branch_choose(&h, PET_AGUMON, 0, 1, 29));
+    assert(!memcmp(&before, &h, sizeof(h)));
+    assert(pet_house_branch_choose(&h, PET_AGUMON, 0, 1, 30));
+    assert(h.branch_mask == 1 && !h.branch_seen_mask && pet_house_valid(&h));
+    pet_usage_t usage = {.date = 20260901, .daily_goal = 1000};
+    for (unsigned day = 1; day <= 16; day++) {
+        usage.date = 20260900 + day; usage.earned[day - 1] = 5;
+        assert(pet_house_sync(&h, &usage));
+        while (pet_house_eat(&h)) {}
+        assert(pet_house_valid(&h));
+    }
+    assert(h.branch_seen_mask == 3 && h.partners[0].highest_plus_one == 5);
+    assert(pet_house_form_seen(&h, PET_AGUMON, 5, 1));
+    assert(pet_house_form_seen(&h, PET_AGUMON, 6, 1));
+    assert(!pet_house_form_seen(&h, PET_AGUMON, 5, 0));
+    assert(!pet_house_form_seen(&h, PET_GABUMON, 6, 1));
+    before = h;
+    assert(!pet_house_branch_choose(&h, PET_GABUMON, 202609, 1, 100));
+    assert(!pet_house_branch_choose(&h, PET_AGUMON, 202608, 0, 100));
+    assert(!pet_house_branch_choose(&h, PET_AGUMON, 202609, 2, 100));
+    assert(!memcmp(&before, &h, sizeof(h)));
+    assert(pet_house_branch_choose(&h, PET_AGUMON, 202609, 0, 0));
+    assert(h.partners[0].highest_plus_one == 7 && pet_house_valid(&h));
+    assert(!memcmp(&before.life, &h.life, sizeof(h.life))); /* Switching never changes food. */
+    assert(pet_house_branch_choose(&h, PET_AGUMON, 202609, 1, 30));
+    usage = (pet_usage_t){.date = 20261001, .daily_goal = 1000};
+    assert(pet_house_sync(&h, &usage));
+    assert(h.archive_count == 1 && h.archive[0].branch == 1 && h.archive[0].result.stage == 6);
+    assert(!h.branch_mask && h.branch_seen_mask == 3 && pet_house_valid(&h));
+    assert(pet_house_choose(&h, PET_AGUMON) && pet_house_stage(&h, PET_AGUMON) == 0);
+    before = h; h.branch_mask = 2; assert(!pet_house_valid(&h));
+    h = before; h.branch_seen_mask = 4; assert(!pet_house_valid(&h));
+    h = before; h.archive[0].species_id = PET_GABUMON; assert(!pet_house_valid(&h));
+    h = before; h.archive[0].result.stage = 4; assert(!pet_house_valid(&h));
+    pet_house_init(&h, NULL); h.version = 3; before = h;
+    assert(pet_house_upgrade_v3(&h)); before.version = 4;
+    assert(!memcmp(&h, &before, sizeof(h))); /* Migration changes version only. */
+    h.version = 3; h.branch_mask = 1; before = h;
+    assert(!pet_house_upgrade_v3(&h) && !memcmp(&h, &before, sizeof(h)));
+}
 int main(void)
 {
     unsigned ids = 0, artwork = 0;
@@ -132,5 +178,6 @@ int main(void)
         assert(pet_house_valid(&h));
     }
     assert(h.archive_count == PET_ARCHIVE_MAX && h.archive[0].result.year == 2027);
+    branches();
     printf("pet_house: PASS (three lines, shared meals, independent saves, late adoption, migration, rollover); %zu bytes\n", sizeof(h));
 }

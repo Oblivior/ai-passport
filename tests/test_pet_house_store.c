@@ -168,5 +168,25 @@ int main(void)
     slots[loaded % 2][24] ^= 1;
     assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked);
     assert(!memcmp(&out, &cleaned, sizeof(out)));
-    puts("pet_house_store: PASS (real boot migration v1/v2, preservation, CRC slots, failed writes/commits, corruption, generation wrap, future catalog)");
+    /* In-place semantic v3->v4 migration: no food/partner/history edits. */
+    record_t v3 = {.generation = 123, .house = cleaned}; v3.house.version = 3;
+    v3.crc = checksum(&v3, offsetof(record_t, crc));
+    memset(sizes, 0, sizeof(sizes));
+    memcpy(slots[1], &v3, sizeof(v3)); sizes[1] = sizeof(v3);
+    assert(pet_house_store_load(&out, &loaded) == 2 && loaded == 123);
+    assert(!memcmp(&out, &cleaned, sizeof(out)));
+    fail_commit = true;
+    assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked && loaded == 123);
+    assert(!memcmp(slots[1], &v3, sizeof(v3)));
+    fail_commit = false;
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && !blocked && loaded == 124);
+    assert(!memcmp(&out, &cleaned, sizeof(out)));
+    previous_writes = writes;
+    assert(pet_house_store_boot(&out, &loaded, &blocked) && writes == previous_writes);
+    /* A future valid schema must block fallback, even next to valid v3. */
+    record_t v5 = {.generation = 124, .house = cleaned}; v5.house.version = 5;
+    v5.crc = checksum(&v5, offsetof(record_t, crc));
+    memcpy(slots[0], &v5, sizeof(v5)); sizes[0] = sizeof(v5);
+    assert(!pet_house_store_boot(&out, &loaded, &blocked) && blocked && writes == previous_writes);
+    puts("pet_house_store: PASS (v1/v2/v3 migration, byte preservation, CRC slots, failed commits, future schema)");
 }

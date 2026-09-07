@@ -6,6 +6,19 @@
 
 ## Unreleased
 
+- Add opt-in, time-bounded nearby greetings using public ephemeral BLE scan
+  responses and mutual on-device confirmation. Show both companions and pairing
+  messages; cancel on page exit, timeout, identity change or computer connection.
+  Enable observer mode without another connection slot or credentials. Keep
+  unauthenticated greeting data entirely separate from food, bond and archives;
+  cover simulated peers, replay, consent, cancellation and real-size UI rendering.
+
+- Add an opt-in Agumon dark route at 30 bond, SkullGreymon and BlackWarGreymon
+  sprites, explicit confirm/cancel, standard-route recovery without growth loss,
+  independent discoveries and accurate monthly branch archives. Migrate validated
+  v3 saves to v4 in the same CRC slots, changing only the version on upgrade;
+  reject unknown schemas and preserve bond, pairing and existing growth.
+
 - Add a three-round timing training game with per-species pixel shots, result
   feedback and optional daily bond rewards. Share three rewards across partners,
   retain lifetime bond by species, and unlock home greetings/celebrations without

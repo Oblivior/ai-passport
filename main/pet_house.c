@@ -47,6 +47,47 @@ static void clear_pantry_archive(pet_house_t *house)
     house->life.family.archive_count = 0;
     house->life.legacy_mask = 0;
 }
+unsigned pet_house_branch(const pet_house_t *house, unsigned id)
+{
+    return house && pet_catalog_branch_supported(id) ? (house->branch_mask >> (id - 1)) & 1U : 0;
+}
+bool pet_house_form_seen(const pet_house_t *house, unsigned id, unsigned stage, unsigned branch)
+{
+    if (!house || !pet_catalog_find(id) || stage >= PET_STAGE_COUNT || branch > 1) return false;
+    if (branch && stage >= PET_STAGE_TITAN)
+        return pet_catalog_branch_supported(id) && (house->branch_seen_mask & (1U << (stage - PET_STAGE_TITAN)));
+    const pet_partner_t *pet = pet_house_partner(house, id);
+    return stage < pet->highest_plus_one;
+}
+static void discover(pet_house_t *house, unsigned id)
+{
+    unsigned stage = pet_house_stage(house, id);
+    if (pet_house_branch(house, id) && stage >= PET_STAGE_TITAN)
+        house->branch_seen_mask |= 1U << (stage - PET_STAGE_TITAN);
+    else if (house->partners[id - 1].highest_plus_one <= stage)
+        house->partners[id - 1].highest_plus_one = stage + 1;
+}
+bool pet_house_branch_choose(pet_house_t *house, unsigned expected_id, uint32_t expected_month,
+                             unsigned branch, unsigned bond_points)
+{
+    if (!pet_house_valid(house) || !pet_catalog_branch_supported(expected_id) ||
+        house->active_id != expected_id || house->life.date / 100 != expected_month || branch > 1 ||
+        (branch && bond_points < PET_BRANCH_BOND)) return false;
+    unsigned bit = 1U << (expected_id - 1);
+    house->branch_mask = branch ? house->branch_mask | bit : house->branch_mask & ~bit;
+    discover(house, expected_id);
+    return true;
+}
+bool pet_house_upgrade_v3(pet_house_t *house)
+{
+    if (!house || house->version != 3 || house->branch_mask || house->branch_seen_mask) return false;
+    for (unsigned i = 0; i < PET_ARCHIVE_MAX; i++) if (house->archive[i].branch) return false;
+    pet_house_t upgraded = *house;
+    upgraded.version = PET_HOUSE_VERSION;
+    if (!pet_house_valid(&upgraded)) return false;
+    *house = upgraded;
+    return true;
+}
 unsigned pet_house_clear_legacy_archives(pet_house_t *house)
 {
     if (!pet_house_valid(house)) return 0;
@@ -84,7 +125,8 @@ bool pet_house_valid(const pet_house_t *house)
 {
     if (!house || house->version != PET_HOUSE_VERSION || !pet_life_valid(&house->life) ||
         house->life.family.archive_count || house->life.legacy_mask || house->archive_count > PET_ARCHIVE_MAX ||
-        house->reserved[0] || house->reserved[1]) return false;
+        (house->branch_mask & ~1U) || (house->branch_seen_mask & ~3U) ||
+        (house->branch_mask && !house->partners[PET_AGUMON - 1].adopted)) return false;
     if (house->active_id && (!pet_catalog_find(house->active_id) ||
         !pet_house_partner(house, house->active_id)->adopted)) return false;
     for (unsigned id = 1; id <= PET_PARTNER_CAPACITY; id++) {
@@ -93,7 +135,7 @@ bool pet_house_valid(const pet_house_t *house)
         /* Older firmware must not overwrite saves containing unknown species. */
         if ((pet->adopted || pet->highest_plus_one) && !pet_catalog_find(id)) return false;
         if (!pet->adopted && (pet->adopted_day || pet_house_meals(house, id))) return false;
-        if (pet->adopted && (pet->highest_plus_one <= pet_house_stage(house, id) ||
+        if (pet->adopted && (!pet->highest_plus_one || !pet_house_form_seen(house, id, pet_house_stage(house, id), pet_house_branch(house, id)) ||
             (house->life.date ? (pet->adopted_day < house->life.adopted_day || pet->adopted_day > house->life.date % 100) : pet->adopted_day))) return false;
     }
     for (unsigned d = 0; d < PET_LIFE_DAYS; d++) {
@@ -104,7 +146,8 @@ bool pet_house_valid(const pet_house_t *house)
     for (unsigned i = 0; i < house->archive_count; i++) {
         const pet_house_archive_t *entry = &house->archive[i];
         const pet_archive_entry_t *e = &entry->result;
-        if ((entry->species_id && !pet_catalog_find(entry->species_id)) || entry->reserved ||
+        if ((entry->species_id && !pet_catalog_find(entry->species_id)) || entry->branch > 1 ||
+            (entry->branch && (!pet_catalog_branch_supported(entry->species_id) || e->stage < PET_STAGE_TITAN)) ||
             !pet_life_date_valid(e->year * 10000U + e->month * 100U + 1) ||
             e->stage >= PET_STAGE_COUNT || e->route >= PET_ROUTE_COUNT) return false;
     }
@@ -120,7 +163,8 @@ bool pet_house_sync(pet_house_t *house, const pet_usage_t *usage)
         for (unsigned id = 1; id <= PET_PARTNER_CAPACITY; id++) {
             pet_partner_t *pet = &house->partners[id - 1];
             if (pet->adopted) {
-                pet_house_archive_t entry = {.species_id = id, .result = {
+                pet_house_archive_t entry = {.species_id = id,
+                    .branch = pet_house_stage(house, id) >= PET_STAGE_TITAN ? pet_house_branch(house, id) : 0, .result = {
                     .year = house->life.date / 10000, .month = house->life.date / 100 % 100,
                     .stage = pet_house_stage(house, id), .food_total = pet_house_meals(house, id),
                 }};
@@ -131,6 +175,7 @@ bool pet_house_sync(pet_house_t *house, const pet_usage_t *usage)
             pet->highest_plus_one = discovered;
         }
         house->active_id = PET_SPECIES_NONE;
+        house->branch_mask = 0;
     }
     house->life = next;
     clear_pantry_archive(house);
@@ -161,8 +206,7 @@ bool pet_house_eat(pet_house_t *house)
         if (!pet_life_eat(&house->life)) return false;
         pet_partner_t *pet = &house->partners[house->active_id - 1];
         pet->eaten[i]++;
-        unsigned discovered = pet_house_stage(house, house->active_id) + 1;
-        if (pet->highest_plus_one < discovered) pet->highest_plus_one = discovered;
+        discover(house, house->active_id);
         return true;
     }
     return false;

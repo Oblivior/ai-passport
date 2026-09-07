@@ -56,12 +56,16 @@ run_static_checks() {
         tests/test_pet_training.c main/pet_training.c main/pet_bond.c main/pet_catalog.c main/pet_life.c main/pet_model.c \
         -o "${test_dir}/test_pet_training"
     "${test_dir}/test_pet_training"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_pet_meet.c main/pet_meet.c main/pet_catalog.c \
+        -o "${test_dir}/test_pet_meet"
+    "${test_dir}/test_pet_meet"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain -Itests/nvs \
         tests/test_pet_bond_store.c main/pet_bond.c main/pet_catalog.c main/pet_life.c main/pet_model.c \
         -o "${test_dir}/test_pet_bond_store"
     "${test_dir}/test_pet_bond_store"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain -Itests/service -Itests/lvgl/stubs \
-        tests/test_pet_service.c main/pet_house.c main/pet_bond.c main/pet_catalog.c main/pet_life.c main/pet_model.c main/pet_protocol.c \
+        tests/test_pet_service.c main/pet_house.c main/pet_bond.c main/pet_catalog.c main/pet_life.c main/pet_model.c main/pet_protocol.c main/pet_meet.c \
         -o "${test_dir}/test_pet_service"
     "${test_dir}/test_pet_service"
     python3 tests/test_pet_companion.py

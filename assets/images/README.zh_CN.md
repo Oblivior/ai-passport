@@ -16,7 +16,8 @@
 
 - 可编辑的代码原生素材源：[`tools/generate_digimon_sprites.mjs`](../../tools/generate_digimon_sprites.mjs)。
 - 生成的固件素材：`digimon_sprites.c` / `digimon_sprites.h`，由 `main/pet_view.c` 使用。
-- 亚古兽、加布兽、巴达兽三条主线，每条七种形态，每种待机、进食、睡眠三个图片版本；32 × 28 RGB565A8，共 169,344 字节常量像素数据。关闭抗锯齿、精确放大三倍。开心和进化使用边界受控的叠加图形与位移，不申请可写全屏画布。
+- 亚古兽、加布兽、巴达兽三条主线，每条七种形态，另有丧尸暴龙兽和黑暗战斗暴龙兽两种分支；每种待机、进食、睡眠三个图片版本。32 × 28 RGB565A8，共 185,472 字节常量像素数据。关闭抗锯齿、精确放大三倍。开心和进化使用边界受控的叠加图形与位移，不申请可写全屏画布。
+- 分支角色参考：[丧尸暴龙兽](https://digimon.net/reference_en/detail.php?directory_name=skullgreymon)、[黑暗战斗暴龙兽](https://digimon.net/reference_en/detail.php?directory_name=blackwargreymon)。成长和分支选择规则为本项目同人设定。
 - 执行 `node tools/generate_digimon_sprites.mjs` 重新生成，加 `--check` 检查可复现性。正常固件构建直接使用已生成素材，不需要 Node。
 - 手工编写的同人表现，未复制或提取官方精灵文件。角色参考：[亚古兽](https://digimon.net/reference_en/detail.php?directory_name=agumon)、[黑球兽](https://digimon.net/reference_en/detail.php?directory_name=botamon)、[滚球兽](https://digimon.net/reference_en/detail.php?directory_name=koromon)、[战斗暴龙兽](https://digimon.net/reference_en/detail.php?directory_name=wargreymon)。
 - 完整主线参考：[万代进化指南](https://toy.bandai.co.jp/assets/vb-digitalmonster/pdf/digimon_startguide.pdf)、[东映巴达兽进化](https://www.toei-anim.co.jp/movie/digimon-adventure/tri/evolution/patamon.php)。素材序号通过目录映射，不是持久物种 ID；新增主线时需同步扩展源文件与素材数组维度。

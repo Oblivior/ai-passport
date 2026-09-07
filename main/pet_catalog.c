@@ -31,3 +31,12 @@ unsigned pet_catalog_days(unsigned stage)
     static const uint8_t values[] = {0, 1, 2, 3, 6, 10, 16};
     return values[stage < PET_STAGE_COUNT ? stage : PET_STAGE_APEX];
 }
+bool pet_catalog_branch_supported(unsigned id) { return id == PET_AGUMON; }
+const char *pet_catalog_branch_form(unsigned id, unsigned stage, unsigned branch)
+{
+    if (pet_catalog_branch_supported(id) && branch == 1) {
+        if (stage == PET_STAGE_TITAN) return "丧尸暴龙兽";
+        if (stage == PET_STAGE_APEX) return "黑暗战斗暴龙兽";
+    }
+    return pet_catalog_form(id, stage);
+}

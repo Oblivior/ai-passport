@@ -2,7 +2,7 @@
 #include "pet_life.h"
 #include "pet_catalog.h"
 
-#define PET_HOUSE_VERSION 3U
+#define PET_HOUSE_VERSION 4U
 typedef struct {
     uint8_t adopted;
     uint8_t adopted_day;
@@ -12,7 +12,7 @@ typedef struct {
 typedef struct {
     pet_archive_entry_t result;
     uint8_t species_id; /* Zero preserves the original robot demo artwork. */
-    uint8_t reserved;
+    uint8_t branch; /* 0 standard; 1 Agumon dark, only for stages 5/6. */
 } pet_house_archive_t;
 typedef struct {
     uint32_t version;
@@ -21,7 +21,8 @@ typedef struct {
     pet_house_archive_t archive[PET_ARCHIVE_MAX];
     uint8_t active_id;
     uint8_t archive_count;
-    uint8_t reserved[2];
+    uint8_t branch_mask; /* Monthly choice, bit (stable species ID - 1). */
+    uint8_t branch_seen_mask; /* Lifetime dark forms: bit 0 skull, bit 1 black war. */
 } pet_house_t;
 
 void pet_house_init(pet_house_t *house, const pet_life_t *legacy);
@@ -37,3 +38,9 @@ unsigned pet_house_stage(const pet_house_t *house, unsigned id);
 /* Remove only obsolete species_id=0 demo archives. Does not touch current
  * partners, pantry, lifetime discoveries or real species archives. */
 unsigned pet_house_clear_legacy_archives(pet_house_t *house);
+unsigned pet_house_branch(const pet_house_t *house, unsigned id);
+bool pet_house_branch_choose(pet_house_t *house, unsigned expected_id, uint32_t expected_month,
+                             unsigned branch, unsigned bond_points);
+bool pet_house_form_seen(const pet_house_t *house, unsigned id, unsigned stage, unsigned branch);
+/* Same 624-byte layout: upgrade only the version after validating v3 fields. */
+bool pet_house_upgrade_v3(pet_house_t *house);
