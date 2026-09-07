@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+- Add complete Agumon, Gabumon and Patamon lines, confirmed egg adoption and a
+  partner house. Preserve individual growth while sharing the daily pantry;
+  prevent historical food from granting pre-adoption days. Keep lifetime catalog
+  discoveries and archive each adopted partner on rollover. Add a fixed-ID v3
+  save with read-only v1/v2 migration, CRC slots, fail-closed downgrade handling
+  and stale-button protection. Verify transactions, failure/reboot recovery,
+  three-line pixel rendering and real selection/cancellation/page interactions.
+
+- Present the seven-stage Agumon line with independent pixel fan art, eating and
+  sleeping variants, and a read-only evolution catalog. Preserve v2 growth,
+  protocol and legacy demo memories; retain usage-route data without treating it
+  as a Digimon species selector. Document character-rights scope and verify the
+  actual scaled pixels in LVGL, not only label bounds.
+
 - Add a five-slot daily lunchbox with source-date Token snapshots, next-meal
   progress, a daily cap, older-food accounting and stale-sync labels. Announce
   newly earned food once without changing saves, protocols or rewards. Cover

@@ -20,7 +20,7 @@
 static const char *TAG = "main";
 
 static const demo_entry_t DEMOS[] = {
-    { "数码伙伴",  demo_pet_enter,      demo_pet_exit,      demo_pet_key      },
+    { "数码宝贝",  demo_pet_enter,      demo_pet_exit,      demo_pet_key      },
     { "屏幕", demo_display_enter, demo_display_exit, demo_display_key },
     { "按键",  demo_button_enter,  demo_button_exit,  demo_button_key  },
     { "声音",   demo_audio_enter,   demo_audio_exit,   demo_audio_key   },

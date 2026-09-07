@@ -14,3 +14,7 @@ lv_obj_t *pet_view_create_pose(lv_obj_t *parent, pet_stage_t stage, int x, int y
 lv_obj_t *pet_view_create_route_pose(lv_obj_t *parent, pet_stage_t stage, pet_route_t route,
                                      int x, int y, pet_pose_t pose);
 void pet_view_frame(lv_obj_t *pet, pet_pose_t pose, unsigned frame);
+
+/* Species-specific fan-art; the caller supplies a stable catalog ID. */
+lv_obj_t *pet_view_create_digimon_pose(lv_obj_t *parent, unsigned species_id, pet_stage_t stage,
+                                      int x, int y, pet_pose_t pose);

@@ -9,15 +9,25 @@
 #include <string.h>
 
 static pet_snapshot_t snapshot;
+static bool fail_ui_save;
 static pet_ble_status_t ble_status;
 void pet_ble_status(pet_ble_status_t *out) { *out = ble_status; }
 static uint16_t framebuffer[240 * 320];
 
 bool pet_service_snapshot(pet_snapshot_t *out) { *out = snapshot; return true; }
 bool pet_service_start(void) { return true; }
-bool pet_service_eat(void)
+bool pet_service_choose(const pet_snapshot_t *shown, unsigned id)
 {
-    bool ate = pet_life_eat(&snapshot.life);
+    assert(shown->house.active_id == snapshot.house.active_id);
+    if (fail_ui_save) { snapshot.storage_ok = false; return true; }
+    bool chosen = pet_house_choose(&snapshot.house, id);
+    if (chosen) { snapshot.revision++; snapshot.storage_ok = true; }
+    return chosen;
+}
+bool pet_service_eat(const pet_snapshot_t *shown)
+{
+    assert(shown->house.active_id == snapshot.house.active_id);
+    bool ate = pet_house_eat(&snapshot.house);
     if (ate) snapshot.revision++;
     return ate;
 }
@@ -101,33 +111,152 @@ static bool has_text(lv_obj_t *obj, const char *text)
     return false;
 }
 
+static void set_stage(unsigned id, unsigned stage)
+{
+    pet_house_init(&snapshot.house, NULL);
+    assert(pet_house_choose(&snapshot.house, id));
+    pet_usage_t usage = {.date = 20260901, .daily_goal = 1000};
+    unsigned days = pet_catalog_days(stage), meals = pet_catalog_meals(stage);
+    for (unsigned day = 1; day <= (days ? days : 1); day++) {
+        usage.date = 20260900 + day;
+        unsigned food = day == days ? meals : meals / (days - day + 1);
+        usage.earned[day - 1] = food;
+        meals -= food;
+        assert(pet_house_sync(&snapshot.house, &usage));
+        while (pet_house_eat(&snapshot.house)) {}
+    }
+    assert(pet_house_valid(&snapshot.house));
+    assert(pet_house_stage(&snapshot.house, id) == stage);
+    snapshot.revision++;
+}
+
+static void partner_scenarios(void)
+{
+    set_stage(PET_AGUMON, PET_STAGE_SCOUT);
+    pet_usage_t usage = {.date = 20260904, .daily_goal = 1000};
+    usage.earned[3] = 5;
+    assert(pet_house_sync(&snapshot.house, &usage));
+    snapshot.revision++;
+    lv_screen_load(lv_obj_create(NULL));
+    demo_pet_enter(); advance(200);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    assert(has_text(lv_screen_active(), "啊呜啊呜，真香！"));
+    for (unsigned i = 0; i < 4; i++) demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); /* Enter picker during eating. */
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(200);
+    capture("partner-gabumon-new");
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    capture("partner-gabumon-confirm");
+    assert(snapshot.house.active_id == PET_AGUMON);
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); /* Cancel without a save. */
+    assert(!pet_house_partner(&snapshot.house, PET_GABUMON)->adopted);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    capture("partner-switched-egg");
+    assert(snapshot.house.active_id == PET_GABUMON);
+    assert(has_text(lv_screen_active(), "数码蛋") && !has_text(lv_screen_active(), "啊呜啊呜，真香！"));
+    assert(pet_house_meals(&snapshot.house, PET_AGUMON) == 7);
+    assert(pet_house_meals(&snapshot.house, PET_GABUMON) == 0 && pet_life_pending(&snapshot.house.life) == 4);
+    /* Back to the original partner: neither reset nor a false evolution. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    advance(200); capture("partner-agumon-resting");
+    assert(has_text(lv_screen_active(), "在家休息 · 陪伴 4 天"));
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    assert(snapshot.house.active_id == PET_AGUMON && pet_house_meals(&snapshot.house, PET_AGUMON) == 7);
+    assert(!has_text(lv_screen_active(), "要进化啦！"));
+    /* Failed adoption retains the partner and allows a visible retry. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    fail_ui_save = true;
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(2300);
+    capture("partner-save-failed");
+    assert(snapshot.house.active_id == PET_AGUMON && !pet_house_partner(&snapshot.house, PET_PATAMON)->adopted);
+    assert(has_text(lv_screen_active(), "存档失败，请重试"));
+    fail_ui_save = false;
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    assert(snapshot.house.active_id == PET_PATAMON && snapshot.storage_ok);
+    assert(pet_life_pending(&snapshot.house.life) == 4);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(5200);
+    assert(pet_house_meals(&snapshot.house, PET_PATAMON) == 1);
+    assert(has_text(lv_screen_active(), "浮游兽"));
+    usage = (pet_usage_t){.date = 20261001, .daily_goal = 1000, .earned = {1}};
+    assert(pet_house_sync(&snapshot.house, &usage)); snapshot.revision++; advance(200);
+    capture("partner-new-month");
+    assert(!snapshot.house.active_id && snapshot.house.archive_count == 3);
+    assert(has_text(lv_screen_active(), "伙伴之家"));
+    /* Return without adopting, then reopen; past catalog discoveries survive. */
+    for (unsigned i = 0; i < PET_CATALOG_COUNT; i++) demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    advance(200); capture("partner-return");
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    assert(has_text(lv_screen_active(), "按确定：挑选伙伴"));
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
+    assert(snapshot.house.active_id == PET_AGUMON && pet_house_stage(&snapshot.house, PET_AGUMON) == 0);
+    for (unsigned i = 0; i < 3; i++) demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    for (unsigned i = 0; i < 3; i++) demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    advance(200); capture("partner-lifetime-catalog");
+    assert(has_text(lv_screen_active(), "已经养成 · 已解锁"));
+    pet_house_t before = snapshot.house;
+    for (unsigned i = 0; i < PET_STAGE_COUNT; i++) { demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200); }
+    assert(!memcmp(&before, &snapshot.house, sizeof(before)));
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); /* Progress, then go back through home to archive. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    for (unsigned i = 0; i < 3; i++) {
+        advance(200); char name[32]; snprintf(name, sizeof(name), "partner-archive-%u", i); capture(name);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    }
+    assert(pet_house_valid(&snapshot.house));
+    demo_pet_exit();
+}
+
 int main(void)
 {
     lv_init();
     lv_display_t *display = lv_display_create(240, 320);
-    static uint8_t buffer[240 * 20 * 2];
+    static _Alignas(64) uint8_t buffer[240 * 20 * 2];
     lv_display_set_buffers(display, buffer, NULL, sizeof(buffer), LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, flush);
     assert(strcmp(pet_model_stage_name(PET_STAGE_EGG), "EGG") == 0);
     assert(strcmp(pet_ui_stage_name(PET_STAGE_EGG), "数码蛋") == 0);
     assert(strcmp(pet_ui_route_name(PET_ROUTE_ARMOR), "装甲") == 0);
+    assert(strcmp(pet_ui_stage_name(PET_STAGE_SCOUT), "亚古兽") == 0);
+    assert(strcmp(pet_ui_stage_level(PET_STAGE_TITAN), "完全体") == 0);
+    assert(strcmp(pet_ui_stage_name(PET_STAGE_APEX), "战斗暴龙兽") == 0);
+    assert(strcmp(pet_ui_legacy_stage_name(PET_STAGE_SPARK), "小火苗") == 0);
     pet_model_t old;
     pet_model_init(&old);
     pet_model_begin_month(&old, 2026, 9);
     for (unsigned i = 1; i <= 4; i++) pet_model_apply_feed(&old, i, 5);
-    pet_life_init(&snapshot.life, &old);
+    pet_life_t legacy;
+    pet_life_init(&legacy, &old);
+    pet_house_init(&snapshot.house, &legacy);
     snapshot.ready = snapshot.storage_ok = true;
     snapshot.revision = 1;
     demo_pet_enter();
     advance(300);
     capture("waiting");
+    assert(has_text(lv_screen_active(), "尚未领养 · 从数码蛋开始"));
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    advance(200);
+    capture("adopt-confirm");
+    assert(!snapshot.house.active_id); /* Preview and confirmation do not adopt. */
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    advance(200);
+    assert(snapshot.house.active_id == PET_AGUMON);
+    capture("first-egg");
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("lunch-empty");
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     pet_usage_t usage = {.date = 20260907, .daily_goal = 1000, .tokens_today = 300};
     usage.earned[6] = 2;
-    assert(pet_life_sync(&snapshot.life, &usage));
+    assert(pet_house_sync(&snapshot.house, &usage));
     snapshot.revision++;
     snapshot.synced_at = lv_tick_get();
     advance(300);
@@ -149,14 +278,14 @@ int main(void)
     advance(300);
     capture("eating");
     for (int i = 0; i < 20; i++) demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
-    assert(pet_life_meals(&snapshot.life) == 1);
+    assert(pet_life_meals(&snapshot.house.life) == 1);
     advance(1200);
     capture("evolving");
     advance(3600);
     capture("spark");
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     advance(5000);
-    assert(pet_life_meals(&snapshot.life) == 2);
+    assert(pet_life_meals(&snapshot.house.life) == 2);
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     advance(200);
     capture("happy");
@@ -175,15 +304,21 @@ int main(void)
     capture("wireless-progress");
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
-    capture("route-pending");
-    pet_life_t before_preview = snapshot.life;
-    const char *preview_names[] = {"route-armor", "route-wild", "route-explorer", "route-current"};
-    for (unsigned i = 0; i < 4; i++) {
+    capture("digimon-lineage");
+    assert(has_text(lv_screen_active(), "亚古兽进化图鉴"));
+    pet_house_t before_preview = snapshot.house;
+    for (unsigned i = 0; i < PET_STAGE_COUNT; i++) {
         demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
         advance(200);
-        capture(preview_names[i]);
+        char preview_name[32];
+        snprintf(preview_name, sizeof(preview_name), "digimon-lineage-%u", i);
+        capture(preview_name);
+        pet_stage_t preview = (snapshot.house.life.stage + i + 1) % PET_STAGE_COUNT;
+        assert(has_text(lv_screen_active(), pet_ui_stage_name(preview)));
+        assert(has_text(lv_screen_active(), preview <= snapshot.house.life.stage ? "已经养成 · 已解锁" : "未来形态预览"));
     }
-    assert(!memcmp(&before_preview, &snapshot.life, sizeof(before_preview)));
+    assert(!memcmp(&before_preview, &snapshot.house, sizeof(before_preview)));
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
     capture("family");
@@ -192,14 +327,14 @@ int main(void)
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(200);
     }
-    assert(pet_life_meals(&snapshot.life) == 2);
+    assert(pet_life_meals(&snapshot.house.life) == 2);
     for (unsigned day = 8; day <= 22; day++) {
         usage.date = 20260900 + day;
         usage.earned[day - 1] = 5;
-        assert(pet_life_sync(&snapshot.life, &usage));
-        while (pet_life_eat(&snapshot.life)) {}
+        assert(pet_house_sync(&snapshot.house, &usage));
+        while (pet_house_eat(&snapshot.house)) {}
     }
-    assert(snapshot.life.stage == PET_STAGE_APEX);
+    assert(snapshot.house.life.stage == PET_STAGE_APEX);
     snapshot.revision++;
     advance(6000);
     demo_pet_exit();
@@ -212,15 +347,14 @@ int main(void)
     capture("apex-happy");
     demo_pet_exit();
     /* Every stage and its next-stage label must fit with real CJK metrics. */
+    for (unsigned index = 0; index < PET_CATALOG_COUNT; index++)
     for (unsigned stage = 0; stage < PET_STAGE_COUNT; stage++) {
-        snapshot.life.stage = stage;
-        snapshot.life.family.route = PET_ROUTE_EXPLORER;
-        snapshot.revision++;
+        set_stage(pet_catalog_at(index)->id, stage);
         lv_screen_load(lv_obj_create(NULL));
         demo_pet_enter();
         advance(300);
         char name[32];
-        snprintf(name, sizeof(name), "zh-stage-%u", stage);
+        snprintf(name, sizeof(name), "line-%u-stage-%u", index, stage);
         capture(name);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
@@ -235,21 +369,22 @@ int main(void)
     capture("zh-save-error");
     demo_pet_exit();
     snapshot.storage_ok = true;
-    snapshot.life.family.archive_count = 0;
+    snapshot.house.archive_count = 0;
     lv_screen_load(lv_obj_create(NULL));
     demo_pet_enter();
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     advance(300);
     capture("zh-empty-family");
     demo_pet_exit();
-    /* Each route keeps its own final form, sleep face and archived identity. */
-    snapshot.life.family.archive_count = 1;
-    snapshot.life.stage = PET_STAGE_APEX;
+    /* Legacy route values remain readable but do not recolor the Agumon line. */
+    snapshot.house.archive_count = 1;
+    snapshot.house.archive[0].result.year = 2026;
+    snapshot.house.archive[0].result.month = 8;
     for (unsigned route = PET_ROUTE_ARMOR; route <= PET_ROUTE_EXPLORER; route++) {
-        snapshot.life.family.route = route;
-        snapshot.life.family.archive[0].route = route;
-        snapshot.life.family.archive[0].stage = PET_STAGE_APEX;
-        snapshot.life.legacy_mask = 0;
+        snapshot.house.life.family.route = route;
+        snapshot.house.archive[0].result.route = route;
+        snapshot.house.archive[0].result.stage = PET_STAGE_APEX;
+        snapshot.house.archive[0].species_id = 0;
         snapshot.revision++;
         lv_screen_load(lv_obj_create(NULL));
         demo_pet_enter();
@@ -263,18 +398,19 @@ int main(void)
         advance(200);
         capture("route-locked");
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(200);
         capture("route-family");
         demo_pet_exit();
     }
     /* Date provenance, large numbers, old food and full allowance on real LVGL. */
-    snapshot.life.date = 20260923;
-    snapshot.life.earned[22] = 2;
-    snapshot.life.eaten[22] = 1;
-    snapshot.life.earned[21] = 5;
-    snapshot.life.eaten[21] = 2;
-    snapshot.life.daily_goal = 1000000000000ULL;
-    snapshot.life.tokens_today = 1;
+    snapshot.house.life.date = 20260923;
+    snapshot.house.life.earned[22] = 2;
+    snapshot.house.life.eaten[22] = 1;
+    snapshot.house.life.earned[21] = 5;
+    snapshot.house.life.eaten[21] = 2;
+    snapshot.house.life.daily_goal = 1000000000000ULL;
+    snapshot.house.life.tokens_today = 1;
     snapshot.synced_at = 0;
     lv_screen_load(lv_obj_create(NULL));
     demo_pet_enter();
@@ -285,16 +421,17 @@ int main(void)
     assert(has_text(lv_screen_active(), "另有旧饭 3 份，先吃旧饭"));
     snapshot.synced_at = lv_tick_get();
     snapshot.revision++;
-    snapshot.life.tokens_today = 9007199254740991ULL;
-    snapshot.life.earned[22] = 5;
+    snapshot.house.life.tokens_today = 9007199254740991ULL;
+    snapshot.house.life.earned[22] = 5;
     advance(300);
     capture("lunch-full");
     assert(has_text(lv_screen_active(), "五份齐了，安心休息吧"));
     assert(has_text(lv_screen_active(), "今日饭盒"));
-    advance(601000);
+    advance(602000); /* Freshness refresh is checked once per 1.5 seconds. */
     capture("lunch-stale");
     assert(has_text(lv_screen_active(), "上次的饭盒"));
     demo_pet_exit();
+    partner_scenarios();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
     lv_screen_load(lv_obj_create(NULL));
     advance(3000);

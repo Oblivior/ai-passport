@@ -1,13 +1,13 @@
 <p align="right"><a href="README.zh_CN.md">简体中文</a> · <strong>English</strong></p>
 
-# AI Pet Passport: daily lunchbox
+# AI Pet Passport: Digimon companions
 
-This fork consumes local Kaboo CSV exports to feed an original pixel pet over
+This fork consumes local Kaboo CSV exports to feed three lines of pixel pets over
 USB or application-encrypted BLE. It is a playable prototype, not a finished product.
 
 ## Play
 
-Open the pet entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, routes and family. Click
+Open the Digimon entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, evolution catalog, partner house and family. Click
 OK once to eat an earned meal; an empty box makes OK pet/wake the character,
 without growth. Eating lasts 1.2 seconds and evolution lasts 1.8 seconds. Idle
 pets sleep after 30 seconds without penalties. On family, OK browses records;
@@ -15,16 +15,18 @@ long OK returns to the hardware menu. Double-click no longer creates food.
 
 | Stage | Meals eaten | Usage days with eaten food |
 | --- | --- | --- |
-| EGG | 0 | 0 |
-| SPARK | 1 | 1 |
-| BYTE | 3 | 2 |
-| SCOUT | 6 | 3 |
-| RANGER | 12 | 6 |
-| TITAN | 24 | 10 |
-| APEX | 40 | 16 |
+| Digi-Egg | 0 | 0 |
+| Botamon | 1 | 1 |
+| Koromon | 3 | 2 |
+| Agumon | 6 | 3 |
+| Greymon | 12 | 6 |
+| MetalGreymon | 24 | 10 |
+| WarGreymon | 40 | 16 |
 
-Both conditions are required. Offline catch-up credits the original food dates,
-not the button-press date. First adoption ignores earlier history. Unclaimed
+Both conditions are required; all three lines use these stage thresholds. Offline
+catch-up credits food source dates, but never dates before that partner's adoption:
+older inventory counts as one adoption day, not many days of companionship.
+The first-ever sync ignores earlier history. Unclaimed
 food stays until the next monthly sync, when it expires.
 
 ### Daily lunchbox
@@ -43,30 +45,38 @@ a real-time counter or a Bits-certified total. Before the first sync after boot,
 or after ten minutes without sync, the page labels it as the previous lunchbox
 and retains its source date. New food produces a four-second home notice without
 interrupting eating/evolution or switching pages; identical syncs do not replay
-the notice. No change to v2 saves, the wire protocol or food allowances.
+the notice. Food allowances and the SYNC protocol are unchanged.
 
-### Three evolution routes
+### Three complete lines and partner house
 
-The route page shows a forecast; OK cycles through final-form previews without
-feeding, changing the save or selecting a route. At RANGER (12 eaten meals and
-6 usage days), the route locks for the month and stays in the family archive.
-The three routes use the same growth requirements; none is a higher rank.
+- Digi-Egg / Botamon / Koromon / Agumon / Greymon / MetalGreymon / WarGreymon.
+- Digi-Egg / Punimon / Tsunomon / Gabumon / Garurumon / WereGarurumon / MetalGarurumon.
+- Digi-Egg / Poyomon / Tokomon / Patamon / Angemon / MagnaAngemon / Seraphimon.
 
-Only completed days since adoption vote, using earned food (not click timing):
-1-2 meals is a light day, 3 is mixed, 4-5 is high. Strictly more light days than
-each other category selects EXPLORER; strictly more high days selects WILD;
-mixed-day wins and ties select ARMOR. Days without food do not vote. Today is
-excluded because its allowance can still grow. No completed usage day shows
-CORE / waiting. Locked routes do not change with later usage or corrections.
+On a fresh start, choose a line with UP/DOWN and confirm twice to adopt its egg.
+In the partner house, OK enters selection; UP/DOWN browse the three partners and
+a return item. The confirmation screen explains whether this is a new egg or a
+returning partner. UP/DOWN cancels confirmation; OK saves the choice. The preview
+for an unadopted line shows its Rookie form, explicitly labeled as a preview of
+a line that starts from an egg. Long OK always leaves for the hardware menu.
 
-These are local food-intensity routes, not inferences about work quality, task
-depth or tool diversity, and not Bits-certified routes. Armor has a shield and
-blue plates; Wild has an orange body and red mane; Explorer has a green body and
-red scarf. All keep the existing seven stages and original procedural artwork.
+Each line may be adopted once per month. Switching resumes independent meals,
+days and form. All partners share the same daily allowance and inventory; neither
+selection nor repeated sync grants extra meals. Only the companion beside you
+eats; resting partners do not lose growth. The catalog distinguishes actually
+raised forms from previews. Discoveries survive monthly rollover; browsing alone
+never unlocks a form. There is no species-changing skin operation.
 
-The v2 save shape is unchanged: the previously unused current `family.route`
-stores the lock. Earlier adult v2 saves acquire a route on their next sync or
-meal, without losing stage or food. Pre-RANGER monthly records remain CORE.
+Existing v2 live progress migrates to Agumon without losing its food or days.
+All pre-v3 archive records retain the original robot presentation. The existing
+food-intensity `family.route` values and ROUTE diagnostics remain for compatibility
+but describe the shared usage ledger, not a species or a branch. No SkullGreymon
+branch is implemented, and high Token usage is not treated as bad care.
+
+The embedded graphics are hand-authored pixel fan art, not official sprites or
+franchise-original characters. Character rights are not granted by the code
+license. No commercial or public redistribution authorization is claimed; review
+rights before public distribution. See [asset details](assets/images/README.md).
 
 ## Companion
 
@@ -160,10 +170,14 @@ response AAD is `PET3-S` plus challenge. Frame order: nonce, ciphertext, tag.
 A successful GATT write is not delivery: require the authenticated application
 ACK. Daily cumulative entitlements and commit-before-ACK remain unchanged.
 
-Legacy `ai_pet` saves remain untouched. New `ai_pet_v2` alternating CRC-protected
-slots import old pets as DEMO MEMORY; the live game starts as an egg. Family
-browses 12 recent records; older legacy records remain in the original save.
-Unreadable v2 slots block writes rather than silently resetting progression.
+New `ai_pet_v3` alternating CRC-protected slots store the shared pantry and
+independent partners. Legacy `ai_pet`, `ai_pet_v2` and pairing saves are not written.
+Only an absent v3 save allows migration; unreadable or incompatible saves block
+writes instead of silently resetting. One corrupt slot can recover from the other;
+CRC-valid unknown species block downgrade. A failed commit keeps the live state
+unchanged. Family holds the latest 12 individual records, not 12 months.
+Downgrading to v2 resumes its old snapshot, not subsequent v3 progress; do not play
+on both versions and expect their diverging saves to merge. Back up before upgrade.
 Use app-only updates at `0x10000` after checking the partition table. Never erase
 flash; preserve device identity and Recovery.
 
@@ -173,6 +187,7 @@ the [existing non-blocking console](https://docs.espressif.com/projects/esp-idf/
 ```text
 PET2 STATUS
 PET2 ROUTE
+PET2 HOUSE
 PET2 SYNC YYYYMMDD <tokens_today> <daily_goal> <31 digits, each 0..5>
 ```
 
@@ -182,9 +197,24 @@ marks prevent replay/ACK-loss duplicates and never undo earned food after a
 source correction. ACK follows NVS commit; failed writes do not change the live
 state. There is no serial command to eat: that requires a physical button.
 
-First sync in a later month archives the pet as LOCAL CHAPTER and starts an egg.
-This is local rollover, not Bits settlement. While offline, the device waits for
-host time instead of inventing a new month.
+HOUSE is USB-only and reports schema version, active species ID, adopted-bit mask
+and storage health. STATUS meals/days/stage refer to the active partner; pending
+food remains shared. There are no remote commands to adopt, switch or eat.
+
+First sync in a later month archives every adopted partner, expires leftover
+food, preserves lifetime discoveries and asks you to choose a new egg. This is
+local rollover, not Bits settlement. Offline, the device waits for host time.
+
+### Adding a line
+
+`main/pet_catalog.c` maps stable IDs (1 Agumon, 2 Gabumon, 3 Patamon) to names and
+artwork. Add a unique ID, a catalog entry, all seven forms and three poses per
+form; increment the catalog count and asset dimensions, regenerate sprites and
+the UI font subset, then extend the host cases and visually check the new names.
+The fixed save capacity is eight IDs. Never renumber existing IDs or use menu
+positions as identity; exceeding capacity needs a new explicit schema migration.
+An old firmware that cannot interpret saved species fails closed. This is a
+firmware/content update workflow, not a hot-download plugin system.
 
 ## Verification and boundaries
 
@@ -203,7 +233,7 @@ ROUTE is read-only and returns `route`, `locked` and `stage`; route IDs are
 0=CORE (unformed), 1=ARMOR, 2=WILD, 3=EXPLORER. Existing STATUS/SYNC fields stay unchanged.
 
 Remaining: Bits settlement and certified feature-based routes, independent Flux
-adapter, selectable species, encounters, sound and production sprite artwork.
+adapter, branching evolution, encounters, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
 Concurrent Wi-Fi scans and the 96 KB recording demo with the persistent radio

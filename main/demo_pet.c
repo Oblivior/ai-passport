@@ -9,7 +9,7 @@
 
 #include <stdio.h>
 
-typedef enum { PAGE_HOME, PAGE_LUNCH, PAGE_PROGRESS, PAGE_ROUTE, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
+typedef enum { PAGE_HOME, PAGE_LUNCH, PAGE_PROGRESS, PAGE_LINEAGE, PAGE_PARTNERS, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
 static pet_snapshot_t s_state;
 static pet_page_t s_page;
 static pet_pose_t s_pose;
@@ -17,12 +17,25 @@ static lv_obj_t *s_scr, *s_content, *s_battery, *s_pet;
 static lv_timer_t *s_timer;
 static uint32_t s_action_at, s_pose_at, s_frame;
 static unsigned s_archive;
-static unsigned s_route_preview;
+static unsigned s_form_preview;
 static uint8_t s_before_stage;
 static bool s_eat_requested;
 static bool s_delivery_notice;
 static uint32_t s_delivery_at;
 static bool s_lunch_recent;
+static unsigned s_partner_cursor, s_choose_requested;
+static bool s_selecting, s_confirming;
+
+static unsigned active_stage(void) { return pet_house_stage(&s_state.house, s_state.house.active_id); }
+static unsigned active_meals(void) { return pet_house_meals(&s_state.house, s_state.house.active_id); }
+static unsigned active_days(void) { return pet_house_days(&s_state.house, s_state.house.active_id); }
+static const char *active_form(unsigned stage) { return pet_catalog_form(s_state.house.active_id, stage); }
+static void focus_active_partner(void)
+{
+    s_partner_cursor = 0;
+    for (unsigned i = 0; i < PET_CATALOG_COUNT; i++)
+        if (pet_catalog_at(i)->id == s_state.house.active_id) s_partner_cursor = i;
+}
 
 static bool sync_recent(void)
 {
@@ -47,8 +60,8 @@ static const char *home_hint(void)
     if (s_pose == PET_POSE_EVOLVE) return "要进化啦！";
     if (s_delivery_notice) return "饭盒送到啦，按确定开饭";
     if (s_pose == PET_POSE_HAPPY) return "见到你真开心！";
-    if (pet_life_pending(&s_state.life)) return "按确定：开饭啦";
-    if (!s_state.life.date) return "连接电脑同步后孵化";
+    if (pet_life_pending(&s_state.house.life)) return "按确定：开饭啦";
+    if (!s_state.house.life.date) return "连接电脑同步后孵化";
     if (s_pose == PET_POSE_SLEEP) return "睡觉中，按确定唤醒";
     return "按确定：摸摸它";
 }
@@ -56,20 +69,22 @@ static const char *home_hint(void)
 static void draw_home(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    if (!s_state.house.active_id) {
+        label(panel, "这个月，和谁一起？", 20, UI_INK);
+        label(panel, "挑一颗数码蛋\n\n开始新的冒险吧", 70, UI_SKY_DARK);
+        label(panel, !s_state.storage_ok ? "存档失败，请重试" : "按确定：挑选伙伴", 180, UI_INK);
+        return;
+    }
     lv_obj_t *plate = ui_pixel_panel_create(panel, 11, 0, 174, 32, UI_YELLOW);
     lv_obj_set_style_pad_all(plate, 0, 0);
     lv_obj_set_style_border_width(plate, 2, 0);
-    uint8_t stage = s_pose == PET_POSE_EVOLVE || s_pose == PET_POSE_EAT ? s_before_stage : s_state.life.stage;
-    pet_route_t route = pet_life_route_locked(&s_state.life) ? pet_life_route(&s_state.life) : PET_ROUTE_CORE;
-    lv_obj_t *name = ui_pixel_label(plate, pet_ui_stage_name(stage),
-        stage >= PET_STAGE_RANGER ? &passport_zh_14 : &passport_zh_20, UI_INK);
-    if (stage >= PET_STAGE_RANGER) lv_label_set_text_fmt(name, "%s / %s",
-        pet_ui_stage_name(stage), pet_ui_route_name(route));
+    uint8_t stage = s_pose == PET_POSE_EVOLVE || s_pose == PET_POSE_EAT ? s_before_stage : active_stage();
+    lv_obj_t *name = ui_pixel_label(plate, active_form(stage), &passport_zh_20, UI_INK);
     lv_obj_center(name);
-    s_pet = pet_view_create_route_pose(panel, stage, route, 49, 40, s_pose);
+    s_pet = pet_view_create_digimon_pose(panel, s_state.house.active_id, stage, 49, 40, s_pose);
     lv_obj_t *stats = label(panel, "", 140, UI_INK);
-    lv_label_set_text_fmt(stats, "饭盒 %u    陪伴 %u 天", pet_life_pending(&s_state.life), pet_life_days(&s_state.life));
-    unsigned pending = pet_life_pending(&s_state.life);
+    lv_label_set_text_fmt(stats, "饭盒 %u    陪伴 %u 天", pet_life_pending(&s_state.house.life), active_days());
+    unsigned pending = pet_life_pending(&s_state.house.life);
     lv_obj_t *tray = lv_obj_create(panel);
     lv_obj_set_size(tray, 112, 12);
     lv_obj_align(tray, LV_ALIGN_TOP_MID, 0, 165);
@@ -85,7 +100,7 @@ static void draw_home(void)
 static void draw_lunch(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    const pet_life_t *life = &s_state.life;
+    const pet_life_t *life = &s_state.house.life;
     pet_lunch_t lunch = pet_lunch_read(life);
     bool recent = s_lunch_recent = sync_recent();
     label(panel, recent ? "今日饭盒" : "上次的饭盒", 0, UI_INK);
@@ -138,12 +153,13 @@ static void draw_lunch(void)
 static void draw_progress(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    label(panel, s_state.life.stage == PET_STAGE_APEX ? "最终形态" : "下次进化", 0, UI_INK);
-    const pet_life_t *life = &s_state.life;
-    label(panel, pet_ui_stage_name(life->stage < PET_STAGE_APEX ? life->stage + 1 : PET_STAGE_APEX), 25, UI_ORANGE);
+    label(panel, active_stage() == PET_STAGE_APEX ? "最终形态" : "下次进化", 0, UI_INK);
+    const pet_life_t *life = &s_state.house.life;
+    unsigned next = active_stage() < PET_STAGE_APEX ? active_stage() + 1 : PET_STAGE_APEX;
+    label(panel, active_form(next), 25, UI_SKY_DARK);
     lv_obj_t *stats = label(panel, "", 55, UI_INK);
-    lv_label_set_text_fmt(stats, "已吃 %u / %u 份\n\n活跃 %u / %u 天",
-        pet_life_meals(life), pet_life_next_meals(life), pet_life_days(life), pet_life_next_days(life));
+    lv_label_set_text_fmt(stats, "已吃 %u / %u 份\n\n陪伴 %u / %u 天",
+        active_meals(), pet_catalog_meals(next), active_days(), pet_catalog_days(next));
     lv_obj_t *date = label(panel, "", 123, UI_SKY_DARK);
     if (life->date) lv_label_set_text_fmt(date, "%04lu-%02lu-%02lu\nKaboo / 本地统计",
         (unsigned long)(life->date / 10000), (unsigned long)(life->date / 100 % 100), (unsigned long)(life->date % 100));
@@ -154,38 +170,68 @@ static void draw_progress(void)
     label(panel, "休息不掉成长值", 180, UI_SKY_DARK);
 }
 
-static void draw_route(void)
+static void draw_lineage(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    pet_route_t route = s_route_preview ? (pet_route_t)s_route_preview : pet_life_route(&s_state.life);
-    label(panel, pet_ui_route_name(route), 0, UI_INK);
-    label(panel, s_route_preview ? "形态预览" : pet_life_route_locked(&s_state.life) ?
-        "本月路线已确定" : "目前的进化倾向", 22, UI_SKY_DARK);
-    pet_stage_t stage = s_route_preview ? PET_STAGE_APEX : s_state.life.stage >= PET_STAGE_RANGER ?
-        s_state.life.stage : PET_STAGE_RANGER;
-    pet_view_create_route_pose(panel, stage, route, 49, 42, PET_POSE_IDLE);
-    label(panel, pet_ui_route_hint(route), 140, UI_INK);
-    label(panel, s_route_preview ? "各路线成长门槛相同" : pet_life_route_locked(&s_state.life) ?
-        "将保留在家族图鉴" : "到游侠阶段确定路线", 158, UI_SKY_DARK);
-    label(panel, "按确定：切换预览", 180, UI_INK);
+    pet_stage_t stage = (pet_stage_t)s_form_preview;
+    const pet_species_info_t *species = pet_catalog_find(s_state.house.active_id);
+    lv_obj_t *title = label(panel, "", 0, UI_INK);
+    lv_label_set_text_fmt(title, "%s进化图鉴", species ? species->name : "伙伴");
+    label(panel, active_form(stage), 22, UI_SKY_DARK);
+    pet_view_create_digimon_pose(panel, s_state.house.active_id, stage, 49, 42, PET_POSE_IDLE);
+    lv_obj_t *level = label(panel, "", 140, UI_INK);
+    lv_label_set_text_fmt(level, "%s · %u/7", pet_ui_stage_level(stage), s_form_preview + 1);
+    const pet_partner_t *pet = pet_house_partner(&s_state.house, s_state.house.active_id);
+    label(panel, pet && stage < pet->highest_plus_one ? "已经养成 · 已解锁" : "未来形态预览", 158, UI_SKY_DARK);
+    label(panel, "按确定：下一种形态", 180, UI_INK);
+}
+
+static void draw_partners(void)
+{
+    lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
+    label(panel, s_confirming ? "就选这位伙伴？" : "伙伴之家", 0, UI_INK);
+    if (s_partner_cursor == PET_CATALOG_COUNT) {
+        label(panel, "先回去陪陪它吧", 78, UI_SKY_DARK);
+        label(panel, "按确定：返回", 180, UI_INK);
+        return;
+    }
+    const pet_species_info_t *species = pet_catalog_at(s_partner_cursor);
+    const pet_partner_t *pet = pet_house_partner(&s_state.house, species->id);
+    unsigned stage = pet->adopted ? pet_house_stage(&s_state.house, species->id) : PET_STAGE_SCOUT;
+    label(panel, species->name, 22, UI_SKY_DARK);
+    pet_view_create_digimon_pose(panel, species->id, stage, 49, 40,
+        pet->adopted && species->id != s_state.house.active_id ? PET_POSE_SLEEP : PET_POSE_IDLE);
+    lv_obj_t *status = label(panel, "", 138, UI_INK);
+    if (pet->adopted) lv_label_set_text_fmt(status, "%s · 陪伴 %u 天",
+        species->id == s_state.house.active_id ? "在你身边" : "在家休息", pet_house_days(&s_state.house, species->id));
+    else lv_label_set_text(status, "尚未领养 · 从数码蛋开始");
+    if (!s_state.storage_ok) label(panel, "存档失败，请重试", 158, UI_RED);
+    else label(panel, s_confirming ? (pet->adopted ? "成长保留，继续陪伴" : "共用饭盒，不额外领饭") :
+        s_selecting ? "上下挑选 · 确定选择" : "按确定：挑选或换伙伴", 158, UI_SKY_DARK);
+    label(panel, s_choose_requested ? "正在保存..." : s_confirming ? "确定带走 · 上下取消" :
+        s_selecting ? "最后一项可以返回" : "上下翻页 · 饭盒大家共享", 180, UI_INK);
 }
 
 static void draw_archive(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
     label(panel, "我的家族图鉴", 0, UI_INK);
-    unsigned count = s_state.life.family.archive_count;
+    unsigned count = s_state.house.archive_count;
     if (!count) {
         label(panel, "第一只伙伴\n还在慢慢长大\n\n下个月来翻翻图鉴吧", 60, UI_SKY_DARK);
         return;
     }
     s_archive %= count;
-    const pet_archive_entry_t *entry = &s_state.life.family.archive[s_archive];
-    pet_view_create_route_pose(panel, entry->stage, entry->route, 49, 28, PET_POSE_IDLE);
+    const pet_house_archive_t *record = &s_state.house.archive[s_archive];
+    const pet_archive_entry_t *entry = &record->result;
+    bool legacy = !record->species_id;
+    if (legacy) pet_view_create_route_pose(panel, entry->stage, entry->route, 49, 28, PET_POSE_IDLE);
+    else pet_view_create_digimon_pose(panel, record->species_id, entry->stage, 49, 28, PET_POSE_IDLE);
     lv_obj_t *details = label(panel, "", 126, UI_INK);
     lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s\n%s  %u/%u", entry->year, entry->month,
-        pet_ui_stage_name(entry->stage), pet_ui_route_name(entry->route),
-        s_state.life.legacy_mask & (1U << s_archive) ? "试玩回忆" : "本地成长记录",
+        legacy ? pet_ui_legacy_stage_name(entry->stage) : pet_catalog_form(record->species_id, entry->stage),
+        legacy ? pet_ui_route_name(entry->route) : pet_ui_stage_level(entry->stage),
+        legacy ? "试玩回忆" : "本地成长记录",
         s_archive + 1, count);
     label(panel, "按确定：下一只伙伴", 180, UI_SKY_DARK);
 }
@@ -198,7 +244,8 @@ static void draw_page(void)
     if (s_page == PAGE_HOME) draw_home();
     else if (s_page == PAGE_LUNCH) draw_lunch();
     else if (s_page == PAGE_PROGRESS) draw_progress();
-    else if (s_page == PAGE_ROUTE) draw_route();
+    else if (s_page == PAGE_LINEAGE) draw_lineage();
+    else if (s_page == PAGE_PARTNERS) draw_partners();
     else draw_archive();
 }
 
@@ -215,13 +262,33 @@ static void tick(lv_timer_t *timer)
     pet_snapshot_t next;
     if (pet_service_snapshot(&next)) {
         bool changed = next.revision != s_state.revision || next.storage_ok != s_state.storage_ok;
-        bool ate = pet_life_meals(&next.life) > pet_life_meals(&s_state.life) && next.life.date / 100 == s_state.life.date / 100;
-        unsigned next_earned = pet_life_pending(&next.life) + pet_life_meals(&next.life);
-        unsigned previous_earned = pet_life_pending(&s_state.life) + pet_life_meals(&s_state.life);
-        bool delivery = next.life.date / 100 == s_state.life.date / 100 ?
+        bool identity_changed = next.house.active_id != s_state.house.active_id ||
+            next.house.life.date / 100 != s_state.house.life.date / 100;
+        bool ate = !identity_changed && pet_house_meals(&next.house, next.house.active_id) > active_meals();
+        unsigned next_earned = pet_life_pending(&next.house.life) + pet_life_meals(&next.house.life);
+        unsigned previous_earned = pet_life_pending(&s_state.house.life) + pet_life_meals(&s_state.house.life);
+        bool delivery = next.house.life.date / 100 == s_state.house.life.date / 100 ?
             next_earned > previous_earned : next_earned > 0;
-        s_before_stage = ate ? s_state.life.stage : s_before_stage;
+        s_before_stage = ate ? active_stage() : s_before_stage;
         s_state = next;
+        if (s_choose_requested && changed && next.storage_ok && next.house.active_id == s_choose_requested) {
+            s_choose_requested = 0;
+            s_selecting = s_confirming = false;
+            s_page = PAGE_HOME;
+        }
+        if (identity_changed) {
+            s_pose = PET_POSE_IDLE;
+            s_pose_at = s_action_at = lv_tick_get();
+            s_eat_requested = false;
+            s_before_stage = s_form_preview = active_stage();
+            if (!next.house.active_id) {
+                s_page = PAGE_PARTNERS;
+                s_selecting = true;
+                s_confirming = false;
+                s_choose_requested = 0;
+                s_partner_cursor = 0;
+            }
+        }
         if (delivery) { s_delivery_notice = true; s_delivery_at = lv_tick_get(); }
         if (ate) {
             s_delivery_notice = false;
@@ -237,15 +304,16 @@ static void tick(lv_timer_t *timer)
     }
     uint32_t elapsed = lv_tick_elaps(s_pose_at);
     if (s_pose == PET_POSE_EAT && elapsed >= 1200) {
-        pose(s_before_stage != s_state.life.stage ? PET_POSE_EVOLVE : PET_POSE_HAPPY);
+        pose(s_before_stage != active_stage() ? PET_POSE_EVOLVE : PET_POSE_HAPPY);
     } else if (s_pose == PET_POSE_EVOLVE && elapsed >= 1800) {
         pose(PET_POSE_HAPPY);
     } else if (s_pose == PET_POSE_HAPPY && elapsed >= 1600) {
         pose(PET_POSE_IDLE);
-    } else if (s_pose == PET_POSE_IDLE && lv_tick_elaps(s_action_at) >= 30000 && !pet_life_pending(&s_state.life)) {
+    } else if (s_pose == PET_POSE_IDLE && lv_tick_elaps(s_action_at) >= 30000 && !pet_life_pending(&s_state.house.life)) {
         pose(PET_POSE_SLEEP);
     }
     if (s_eat_requested && lv_tick_elaps(s_action_at) >= 2000) s_eat_requested = false;
+    if (s_choose_requested && lv_tick_elaps(s_action_at) >= 2000) { s_choose_requested = 0; draw_page(); }
     pet_view_frame(s_pet, s_pose, s_frame++);
     if (s_frame % 10 == 0) {
         /* Do not rebuild the lunchbox on every timer: only a new snapshot or
@@ -259,17 +327,21 @@ static void tick(lv_timer_t *timer)
 
 void demo_pet_enter(void)
 {
-    pet_life_init(&s_state.life, NULL);
+    pet_house_init(&s_state.house, NULL);
     s_state.ready = false;
     pet_service_snapshot(&s_state);
-    s_page = PAGE_HOME;
+    s_page = s_state.house.active_id ? PAGE_HOME : PAGE_PARTNERS;
+    s_selecting = !s_state.house.active_id;
+    s_confirming = false;
+    s_choose_requested = 0;
+    focus_active_partner();
     s_pose = PET_POSE_IDLE;
     s_action_at = s_pose_at = lv_tick_get();
     s_eat_requested = false;
     s_delivery_notice = false;
-    s_route_preview = 0;
-    s_archive = s_state.life.family.archive_count ? s_state.life.family.archive_count - 1 : 0;
-    s_scr = ui_pixel_screen_create("数码伙伴");
+    s_form_preview = active_stage();
+    s_archive = s_state.house.archive_count ? s_state.house.archive_count - 1 : 0;
+    s_scr = ui_pixel_screen_create("数码宝贝");
     s_battery = ui_pixel_label(s_scr, "--%", &passport_zh_14, UI_PAPER);
     lv_obj_set_pos(s_battery, 169, 29);
     lv_obj_set_width(s_battery, 65);
@@ -296,23 +368,44 @@ void demo_pet_exit(void)
 void demo_pet_key(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
     if (ev != BSP_BTN_CLICK) return;
+    if (s_choose_requested) return;
     s_action_at = lv_tick_get();
+    if (s_page == PAGE_PARTNERS && s_selecting) {
+        if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
+            if (s_confirming) s_confirming = false;
+            else s_partner_cursor = (s_partner_cursor + (btn == BSP_BTN_UP ? PET_CATALOG_COUNT : 1)) % (PET_CATALOG_COUNT + 1);
+        } else if (btn == BSP_BTN_OK) {
+            if (s_partner_cursor == PET_CATALOG_COUNT) { s_selecting = false; s_page = PAGE_HOME; }
+            else if (!s_confirming) s_confirming = true;
+            else {
+                unsigned id = pet_catalog_at(s_partner_cursor)->id;
+                if (pet_service_choose(&s_state, id)) s_choose_requested = id;
+            }
+        }
+        draw_page();
+        return;
+    }
     if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
         s_page = btn == BSP_BTN_UP ? (s_page + PAGE_COUNT - 1) % PAGE_COUNT : (s_page + 1) % PAGE_COUNT;
-        s_route_preview = 0;
+        if (s_page == PAGE_PARTNERS) focus_active_partner();
+        s_form_preview = active_stage();
         draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_HOME) {
+        if (!s_state.house.active_id) { s_page = PAGE_PARTNERS; s_selecting = true; s_partner_cursor = 0; draw_page(); return; }
         if (s_pose == PET_POSE_EAT || s_pose == PET_POSE_EVOLVE || s_eat_requested) return;
-        if (pet_life_pending(&s_state.life)) s_eat_requested = pet_service_eat();
+        if (pet_life_pending(&s_state.house.life)) s_eat_requested = pet_service_eat(&s_state);
         else pose(PET_POSE_HAPPY);
     } else if (btn == BSP_BTN_OK && s_page == PAGE_LUNCH) {
         s_page = PAGE_HOME;
         draw_page();
-    } else if (btn == BSP_BTN_OK && s_page == PAGE_ROUTE) {
-        s_route_preview = (s_route_preview + 1) % 4;
+    } else if (btn == BSP_BTN_OK && s_page == PAGE_LINEAGE) {
+        s_form_preview = (s_form_preview + 1) % PET_STAGE_COUNT;
         draw_page();
     } else if (btn == BSP_BTN_OK && s_page == PAGE_ARCHIVE) {
         s_archive++;
+        draw_page();
+    } else if (btn == BSP_BTN_OK && s_page == PAGE_PARTNERS) {
+        s_selecting = true;
         draw_page();
     }
 }

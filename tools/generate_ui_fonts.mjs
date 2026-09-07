@@ -11,7 +11,7 @@ const [font, converter] = process.argv.slice(2);
 if (!font || !converter) throw new Error('Usage: node tools/generate_ui_fonts.mjs <SourceHanSansSC-Normal.otf> <lv_font_conv.js>');
 const sha = createHash('sha256').update(readFileSync(font)).digest('hex');
 if (sha !== '7e5b7e586262f5e187c3397935b3a0dfbe28e08a916be0f60ec7fee2b50abd6d') throw new Error('Font checksum mismatch');
-const files = readdirSync(resolve(root, 'main')).filter(f => /^(demo_.*|main|pet_ui_text)\.c$/.test(f)).sort();
+const files = readdirSync(resolve(root, 'main')).filter(f => /^(demo_.*|main|pet_ui_text|pet_catalog)\.c$/.test(f)).sort();
 const symbols = new Set();
 for (const file of files) {
     const source = readFileSync(resolve(root, 'main', file), 'utf8');

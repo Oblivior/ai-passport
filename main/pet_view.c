@@ -1,6 +1,8 @@
 #include "pet_view.h"
 
 #include "ui_pixel.h"
+#include "../assets/images/digimon_sprites.h"
+#include "pet_catalog.h"
 
 static lv_obj_t *pixel(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
 {
@@ -184,4 +186,42 @@ void pet_view_frame(lv_obj_t *pet, pet_pose_t pose, unsigned frame)
     /* Blink without a translucent off-screen layer on this no-PSRAM board. */
     if (pose == PET_POSE_EVOLVE && frame % 2) lv_obj_add_flag(pet, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_remove_flag(pet, LV_OBJ_FLAG_HIDDEN);
+}
+
+lv_obj_t *pet_view_create_digimon_pose(lv_obj_t *parent, unsigned species_id, pet_stage_t stage,
+                                      int x, int y, pet_pose_t pose)
+{
+    const pet_species_info_t *species = pet_catalog_find(species_id);
+    if (!species || species->artwork >= sizeof(digimon_sprites) / sizeof(digimon_sprites[0])) return NULL;
+    if ((unsigned)stage >= PET_STAGE_COUNT) stage = PET_STAGE_EGG;
+    lv_obj_t *pet = lv_obj_create(parent);
+    lv_obj_remove_flag(pet, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(pet, x, y);
+    lv_obj_set_size(pet, 100, 94);
+    lv_obj_set_style_bg_opa(pet, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(pet, 0, 0);
+    lv_obj_set_style_pad_all(pet, 0, 0);
+    lv_obj_t *sprite = lv_image_create(pet);
+    unsigned variant = pose == PET_POSE_SLEEP ? 2 : pose == PET_POSE_EAT ? 1 : 0;
+    lv_image_set_src(sprite, &digimon_sprites[species->artwork][stage][variant]);
+    lv_image_set_pivot(sprite, 0, 0);
+    lv_image_set_scale(sprite, 768); /* Exact 3x nearest-neighbor, 96 x 84. */
+    lv_image_set_antialias(sprite, false);
+    lv_obj_set_pos(sprite, 2, 5);
+    if (pose == PET_POSE_SLEEP) {
+        lv_obj_t *z = lv_label_create(pet);
+        lv_label_set_text(z, "z Z");
+        lv_obj_set_style_text_font(z, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(z, lv_color_hex(UI_SKY_DARK), 0);
+        lv_obj_set_pos(z, 71, 0);
+    } else if (pose == PET_POSE_EAT) {
+        pixel(pet, 38, 85, 24, 4, UI_ORANGE);
+        pixel(pet, 36, 89, 28, 3, UI_INK);
+    } else if (pose == PET_POSE_HAPPY) {
+        pixel(pet, 79, 0, 4, 4, UI_RED);
+        pixel(pet, 86, 0, 4, 4, UI_RED);
+        pixel(pet, 79, 4, 11, 3, UI_RED);
+        pixel(pet, 82, 7, 5, 3, UI_RED);
+    }
+    return pet;
 }

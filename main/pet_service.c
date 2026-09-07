@@ -1,12 +1,11 @@
 #include "pet_service.h"
 #include "pet_protocol.h"
-#include "pet_store.h"
+#include "pet_house_store.h"
 #include "pet_ble.h"
 #include "demo_radio.h"
 
 #include <stdio.h>
 #include <string.h>
-#include <stddef.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include "freertos/FreeRTOS.h"
@@ -14,17 +13,16 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
-#include "nvs.h"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
 typedef struct {
-    uint32_t generation;
-    pet_life_t life;
-    uint32_t crc;
-} record_t;
+    uint32_t month;
+    uint8_t expected_id;
+    uint8_t choose_id; /* Zero feeds, otherwise selects this species. */
+} action_t;
 
 static SemaphoreHandle_t s_lock;
 static QueueHandle_t s_actions;
@@ -32,60 +30,6 @@ static pet_snapshot_t s_snapshot;
 static uint32_t s_generation;
 static bool s_storage_blocked;
 static bool s_wireless_request;
-static const char *const KEYS[] = {"slot0", "slot1"};
-
-static uint32_t checksum(const record_t *record)
-{
-    const uint8_t *bytes = (const uint8_t *)record;
-    uint32_t crc = 0xFFFFFFFF;
-    for (size_t i = 0; i < offsetof(record_t, crc); i++) {
-        crc ^= bytes[i];
-        for (unsigned b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
-    }
-    return ~crc;
-}
-
-/* 1: loaded, 0: new install, -1: unreadable; never replace damaged saves. */
-static int load(pet_life_t *life)
-{
-    nvs_handle_t h;
-    esp_err_t err = nvs_open("ai_pet_v2", NVS_READONLY, &h);
-    if (err == ESP_ERR_NVS_NOT_FOUND) return 0;
-    if (err != ESP_OK) return -1;
-    record_t records[2];
-    bool valid[2];
-    for (unsigned i = 0; i < 2; i++) {
-        memset(&records[i], 0, sizeof(record_t));
-        size_t size = sizeof(record_t);
-        valid[i] = nvs_get_blob(h, KEYS[i], &records[i], &size) == ESP_OK &&
-            size == sizeof(record_t) && records[i].crc == checksum(&records[i]) &&
-            pet_life_valid(&records[i].life);
-    }
-    nvs_close(h);
-    if (!valid[0] && !valid[1]) return -1;
-    unsigned at = valid[1] && (!valid[0] || records[1].generation > records[0].generation);
-    s_generation = records[at].generation;
-    *life = records[at].life;
-    return 1;
-}
-
-static bool save(const pet_life_t *life)
-{
-    nvs_handle_t h;
-    if (nvs_open("ai_pet_v2", NVS_READWRITE, &h) != ESP_OK) return false;
-    record_t record;
-    memset(&record, 0, sizeof(record));
-    record.generation = s_generation + 1;
-    record.life = *life;
-    record.crc = checksum(&record);
-    esp_err_t err = nvs_set_blob(h, KEYS[record.generation % 2], &record, sizeof(record));
-    if (err == ESP_OK) err = nvs_commit(h);
-    nvs_close(h);
-    if (err != ESP_OK) return false;
-    s_generation = record.generation;
-    return true;
-}
-
 static void publish(const pet_snapshot_t *state)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -93,14 +37,15 @@ static void publish(const pet_snapshot_t *state)
     xSemaphoreGive(s_lock);
 }
 
-static bool commit(pet_snapshot_t *state, const pet_life_t *next)
+static bool commit(pet_snapshot_t *state, const pet_house_t *next)
 {
-    if (s_storage_blocked || ((!state->storage_ok || memcmp(&state->life, next, sizeof(*next))) && !save(next))) {
+    if (s_storage_blocked || ((!state->storage_ok || memcmp(&state->house, next, sizeof(*next))) &&
+        !pet_house_store_save(next, &s_generation))) {
         state->storage_ok = false;
         publish(state);
         return false;
     }
-    state->life = *next;
+    state->house = *next;
     state->storage_ok = true;
     state->revision++;
     publish(state);
@@ -111,9 +56,10 @@ static void reply(const pet_snapshot_t *state, const char *status)
 {
     char line[PET_LINE_MAX];
     snprintf(line, sizeof(line), "PET2 %s date=%lu pending=%u meals=%u days=%u stage=%u goal=%llu archives=%u",
-        status, (unsigned long)state->life.date, pet_life_pending(&state->life),
-        pet_life_meals(&state->life), pet_life_days(&state->life), state->life.stage,
-        (unsigned long long)state->life.daily_goal, state->life.family.archive_count);
+        status, (unsigned long)state->house.life.date, pet_life_pending(&state->house.life),
+        pet_house_meals(&state->house, state->house.active_id), pet_house_days(&state->house, state->house.active_id),
+        pet_house_stage(&state->house, state->house.active_id),
+        (unsigned long long)state->house.life.daily_goal, state->house.archive_count);
     if (s_wireless_request) pet_ble_reply(line);
     else { printf("\n%s\n", line); fflush(stdout); }
 }
@@ -145,14 +91,26 @@ static void handle_line(pet_snapshot_t *state, const char *line)
     if (!strcmp(line, "PET2 ROUTE")) {
         char response[96];
         snprintf(response, sizeof(response), "PET2 ROUTE route=%u locked=%u stage=%u",
-            (unsigned)pet_life_route(&state->life), pet_life_route_locked(&state->life), state->life.stage);
+            (unsigned)pet_life_route(&state->house.life), pet_life_route_locked(&state->house.life),
+            pet_house_stage(&state->house, state->house.active_id));
+        if (s_wireless_request) pet_ble_reply(response);
+        else { printf("\n%s\n", response); fflush(stdout); }
+        return;
+    }
+    if (!s_wireless_request && !strcmp(line, "PET2 HOUSE")) {
+        char response[96];
+        unsigned adopted = 0;
+        for (unsigned id = 1; id <= PET_PARTNER_CAPACITY; id++)
+            if (pet_house_partner(&state->house, id)->adopted) adopted |= 1U << (id - 1);
+        snprintf(response, sizeof(response), "PET2 HOUSE version=3 active=%u adopted=%u storage=%u",
+            state->house.active_id, adopted, state->storage_ok);
         if (s_wireless_request) pet_ble_reply(response);
         else { printf("\n%s\n", response); fflush(stdout); }
         return;
     }
     pet_usage_t usage;
-    pet_life_t next = state->life;
-    if (!pet_protocol_parse(line, &usage) || !pet_life_sync(&next, &usage)) {
+    pet_house_t next = state->house;
+    if (!pet_protocol_parse(line, &usage) || !pet_house_sync(&next, &usage)) {
         reply(state, "REJECTED");
         return;
     }
@@ -171,14 +129,9 @@ static void worker(void *arg)
     (void)arg;
     pet_snapshot_t state = {0};
     bool nvs_ok = demo_radio_nvs_prepare() == ESP_OK;
-    int loaded = nvs_ok ? load(&state.life) : -1;
-    if (loaded <= 0) {
-        s_storage_blocked = loaded < 0;
-        pet_model_t old;
-        bool migrated = loaded == 0 && pet_store_load(&old);
-        pet_life_init(&state.life, migrated ? &old : NULL);
-        state.storage_ok = !s_storage_blocked && save(&state.life);
-    } else state.storage_ok = true;
+    pet_house_init(&state.house, NULL);
+    s_storage_blocked = !nvs_ok;
+    state.storage_ok = nvs_ok && pet_house_store_boot(&state.house, &s_generation, &s_storage_blocked);
     state.ready = true;
     state.revision = 1;
     publish(&state);
@@ -208,10 +161,11 @@ static void worker(void *arg)
         }
         unsigned now = (unsigned)(esp_timer_get_time() / 1000);
         if (used && now - last_byte > 5000) { used = 0; discard = true; }
-        uint8_t action;
+        action_t action;
         if (xQueueReceive(s_actions, &action, 0) == pdTRUE) {
-            pet_life_t next = state.life;
-            if (pet_life_eat(&next)) commit(&state, &next);
+            pet_house_t next = state.house;
+            /* A delayed button must never feed another pet or next month's egg. */
+            if (pet_house_action(&next, action.expected_id, action.month, action.choose_id)) commit(&state, &next);
         }
         char c;
         for (unsigned i = 0; i < PET_LINE_MAX && read(STDIN_FILENO, &c, 1) == 1; i++) {
@@ -237,8 +191,8 @@ bool pet_service_start(void)
 {
     if (s_actions) return true;
     s_lock = xSemaphoreCreateMutex();
-    s_actions = xQueueCreate(1, sizeof(uint8_t));
-    if (!s_lock || !s_actions || xTaskCreate(worker, "pet_life", 6144, NULL, 3, NULL) != pdPASS) {
+    s_actions = xQueueCreate(1, sizeof(action_t));
+    if (!s_lock || !s_actions || xTaskCreate(worker, "pet_life", 8192, NULL, 3, NULL) != pdPASS) {
         if (s_actions) vQueueDelete(s_actions);
         if (s_lock) vSemaphoreDelete(s_lock);
         s_actions = NULL;
@@ -256,8 +210,12 @@ bool pet_service_snapshot(pet_snapshot_t *snapshot)
     return snapshot->ready;
 }
 
-bool pet_service_eat(void)
+static bool queue_action(const pet_snapshot_t *shown, unsigned choose_id)
 {
-    uint8_t action = 1;
-    return s_actions && xQueueSend(s_actions, &action, 0) == pdTRUE;
+    if (!s_actions || !shown || !shown->ready) return false;
+    action_t action = {.month = shown->house.life.date / 100,
+        .expected_id = shown->house.active_id, .choose_id = choose_id};
+    return xQueueSend(s_actions, &action, 0) == pdTRUE;
 }
+bool pet_service_eat(const pet_snapshot_t *shown) { return queue_action(shown, 0); }
+bool pet_service_choose(const pet_snapshot_t *shown, unsigned id) { return pet_catalog_find(id) && queue_action(shown, id); }
