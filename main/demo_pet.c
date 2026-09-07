@@ -64,12 +64,23 @@ static void set_hint(const char *text)
 static void draw_home(void)
 {
     lv_obj_t *panel = ui_pixel_panel_create(s_content, 7, 4, 216, 220, UI_PAPER);
-    lv_obj_t *name = ui_pixel_label(panel,
+    lv_obj_t *stage_plate = lv_obj_create(panel);
+    lv_obj_set_size(stage_plate, 174, 32);
+    lv_obj_align(stage_plate, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_remove_flag(stage_plate, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(stage_plate, 0, 0);
+    lv_obj_set_style_border_width(stage_plate, 2, 0);
+    lv_obj_set_style_border_color(stage_plate, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_bg_color(stage_plate, lv_color_hex(UI_YELLOW), 0);
+    lv_obj_set_style_pad_all(stage_plate, 0, 0);
+
+    lv_obj_t *name = ui_pixel_label(stage_plate,
         pet_model_stage_name((pet_stage_t)s_model.stage),
         &lv_font_montserrat_20, UI_INK);
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 2);
+    lv_obj_center(name);
 
-    s_pet = pet_view_create(panel, (pet_stage_t)s_model.stage, 49, 31);
+    /* Keep every stage, including APEX's crown, below the fixed title plate. */
+    s_pet = pet_view_create(panel, (pet_stage_t)s_model.stage, 49, 48);
 
     lv_obj_t *stats = ui_pixel_label(panel, "", &lv_font_montserrat_14, UI_INK);
     lv_label_set_text_fmt(stats, "FOOD %u   GROW %u%%",
@@ -131,7 +142,7 @@ static void draw_archive(void)
     }
 
     pet_archive_entry_t *entry = &s_model.archive[s_model.archive_count - 1U];
-    pet_view_create(panel, (pet_stage_t)entry->stage, 49, 34);
+    pet_view_create(panel, (pet_stage_t)entry->stage, 49, 48);
     lv_obj_t *details = ui_pixel_label(panel, "", &lv_font_montserrat_14, UI_INK);
     lv_label_set_text_fmt(details, "%04u-%02u  %s\n%s ROUTE   #%u/12",
         (unsigned)entry->year, (unsigned)entry->month,
@@ -169,8 +180,8 @@ static void tick(lv_timer_t *timer)
     (void)timer;
     int soc = bsp_battery_soc();
     if (s_battery) {
-        if (soc < 0) lv_label_set_text(s_battery, "BAT --");
-        else lv_label_set_text_fmt(s_battery, "BAT %d", soc);
+        if (soc < 0) lv_label_set_text(s_battery, "--%");
+        else lv_label_set_text_fmt(s_battery, "%d%%", soc);
     }
 
     bool sleeping = lv_tick_elaps(s_last_action) >= 15000U;
@@ -197,8 +208,10 @@ void demo_pet_enter(void)
     s_sleeping = false;
     s_last_action = lv_tick_get();
     s_scr = ui_pixel_screen_create("AI PET");
-    s_battery = ui_pixel_label(s_scr, "BAT --", &lv_font_montserrat_14, UI_INK);
-    lv_obj_set_pos(s_battery, 174, 30);
+    s_battery = ui_pixel_label(s_scr, "--%", &lv_font_montserrat_14, UI_PAPER);
+    lv_obj_set_pos(s_battery, 169, 29);
+    lv_obj_set_width(s_battery, 65);
+    lv_obj_set_style_text_align(s_battery, LV_TEXT_ALIGN_RIGHT, 0);
 
     s_content = lv_obj_create(s_scr);
     lv_obj_remove_flag(s_content, LV_OBJ_FLAG_SCROLLABLE);

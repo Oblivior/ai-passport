@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- Separated the pet stage title from the animated character into a fixed pixel
+  plate and simplified the battery readout to prevent overlap on the 240x320
+  display.
 - Added an offline AI Pet MVP for the Passport: seven original growth stages,
   button-driven feeding and monthly settlement, a 12-month family archive,
   sleep-without-decay behavior, battery status, and CRC-protected dual-slot NVS
