@@ -7,7 +7,7 @@ USB or application-encrypted BLE. It is a playable prototype, not a finished pro
 
 ## Play
 
-Open the Digimon entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, evolution catalog, partner house and family. Click
+Open the Digimon entry in the menu. UP/DOWN switch home, daily lunchbox, next evolution, evolution catalog, partner house, training and family. Click
 OK once to eat an earned meal; an empty box makes OK pet/wake the character,
 without growth. Eating lasts 1.2 seconds and evolution lasts 1.8 seconds. Idle
 pets sleep after 30 seconds without penalties. On family, OK returns home when
@@ -29,6 +29,33 @@ catch-up credits food source dates, but never dates before that partner's adopti
 older inventory counts as one adoption day, not many days of companionship.
 The first-ever sync ignores earlier history. Unclaimed
 food stays until the next monthly sync, when it expires.
+
+### Training and bond
+
+After hatching, visit the training ground (UP twice from home). OK starts three
+rounds of at most five seconds each. Stop the moving cursor in the yellow center
+for two points, green area for one, otherwise zero. Each round accepts one click;
+missed rounds expire without points. Agumon, Gabumon and Patamon use fire, ice
+and wind-inspired pixel shots. UP/DOWN during play cancels without a reward;
+long OK still exits to the hardware menu. Results return to the lobby with OK.
+
+The first three completed games with at least one attempt share one daily
+reward budget across all partners. Scores 0-2, 3-5 and 6 give 1, 2 and 3 bond
+points respectively. Later games remain playable without rewards. Idle games
+and cancellations consume neither rewards nor meals. Bond caps at 100 per line,
+survives switching and monthly eggs, and never gates or accelerates evolution.
+At 10 points the home greeting changes; at 30 it adds a side-to-side greeting;
+at 60 it adds a double-hop celebration. No absence penalty or compulsory check-in.
+
+Rewards require a host sync within ten minutes and the same displayed partner
+and date when the result is committed. Offline games are practice only; they
+are not queued for later rewards. A day changes only through normal host sync.
+The result page reports saved points, practice, stale identity/date or a retryable
+save error. Retrying a result cannot award it twice. Bond uses its own 28-byte,
+version-1 state in CRC-protected `ai_pet_bond` slots, without rewriting the v3 pet
+save. Corrupt/future bond saves block bond writes but do not reset pet growth.
+USB-only `PET2 BOND` reports points, reward date/count and storage health;
+there is no remote training or bond mutation command.
 
 ### Daily lunchbox
 
@@ -194,6 +221,7 @@ the [existing non-blocking console](https://docs.espressif.com/projects/esp-idf/
 PET2 STATUS
 PET2 ROUTE
 PET2 HOUSE
+PET2 BOND
 PET2 SYNC YYYYMMDD <tokens_today> <daily_goal> <31 digits, each 0..5>
 ```
 

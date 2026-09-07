@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- Add a three-round timing training game with per-species pixel shots, result
+  feedback and optional daily bond rewards. Share three rewards across partners,
+  retain lifetime bond by species, and unlock home greetings/celebrations without
+  altering meals or evolution. Persist bond in isolated CRC slots, protect
+  duplicate/stale results and save retries, and allow offline practice. Verify
+  timing, daily caps, fault recovery, page navigation, layout and interrupted play.
+
 - Remove obsolete robot family records from active saves through CRC-protected
   startup transactions, preserving current companions and real Digimon history.
   Keep legacy source saves unchanged and retry failed cleanup on reboot. Make

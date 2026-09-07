@@ -6,6 +6,8 @@
 static char response[PET_LINE_MAX];
 static bool fail_save;
 static unsigned saves;
+static unsigned bond_saves;
+static bool fail_bond_save;
 static action_t queued;
 static int marker;
 QueueHandle_t xQueueCreate(unsigned count, size_t size) { assert(count == 1 && size == sizeof(action_t)); return &marker; }
@@ -35,6 +37,10 @@ bool pet_house_store_boot(pet_house_t *house, uint32_t *generation, bool *blocke
 { pet_house_init(house, NULL); *generation = 0; *blocked = false; return true; }
 bool pet_house_store_save(const pet_house_t *house, uint32_t *generation)
 { assert(pet_house_valid(house)); saves++; if (fail_save) return false; (*generation)++; return true; }
+int pet_bond_store_load(pet_bond_t *bond, uint32_t *generation)
+{ (void)bond; (void)generation; return 0; }
+bool pet_bond_store_save(const pet_bond_t *bond, uint32_t *generation)
+{ assert(pet_bond_valid(bond)); bond_saves++; if (fail_bond_save) return false; (*generation)++; return true; }
 
 int main(void)
 {
@@ -75,5 +81,47 @@ int main(void)
     unsigned before = saves;
     handle_line(&state, sync);
     assert(!strncmp(response, "PET2 STORAGE_ERROR ", 19) && saves == before);
+    s_storage_blocked = false;
+    state.storage_ok = state.bond_storage_ok = true;
+    assert(pet_house_choose(&state.house, PET_AGUMON));
+    pet_bond_init(&state.bond); state.synced_at = 999; publish(&state);
+    pet_house_t original = state.house;
+    shown = state;
+    assert(pet_service_train(&shown, 6, 3, 1));
+    action_t training = queued;
+    process_action(&state, &training);
+    assert(state.training_ticket == 1 && state.training_result == PET_TRAIN_REWARDED && state.training_gain == 3);
+    assert(state.bond.points[0] == 3 && bond_saves == 1 && saves == before);
+    process_action(&state, &training);
+    assert(bond_saves == 1 && state.bond.points[0] == 3); /* Duplicate result, no double reward. */
+    assert(pet_service_train(&shown, 3, 3, 2)); training = queued;
+    fail_bond_save = true; process_action(&state, &training);
+    assert(state.training_result == PET_TRAIN_SAVE_ERROR && state.bond.points[0] == 3 && state.storage_ok);
+    fail_bond_save = false; process_action(&state, &training);
+    assert(state.training_result == PET_TRAIN_REWARDED && state.bond.points[0] == 5 && state.bond_storage_ok);
+    assert(pet_service_train(&shown, 0, 1, 3)); process_action(&state, &queued);
+    assert(state.bond.points[0] == 6 && state.bond.rewarded_today == 3);
+    unsigned previous_bond_saves = bond_saves;
+    assert(pet_service_train(&shown, 6, 3, 4)); process_action(&state, &queued);
+    assert(state.training_result == PET_TRAIN_PRACTICE && bond_saves == previous_bond_saves);
+    process_action(&state, &training); /* Older ticket cannot replace a newer receipt. */
+    assert(state.training_ticket == 4);
+    state.synced_at = 0;
+    assert(pet_service_train(&shown, 6, 3, 5)); process_action(&state, &queued);
+    assert(state.training_result == PET_TRAIN_OFFLINE);
+    state.synced_at = 999;
+    shown.house.active_id = PET_GABUMON;
+    assert(pet_service_train(&shown, 6, 3, 6)); process_action(&state, &queued);
+    assert(state.training_result == PET_TRAIN_STALE);
+    shown = state; shown.house.life.date++;
+    assert(pet_service_train(&shown, 6, 3, 7)); process_action(&state, &queued);
+    assert(state.training_result == PET_TRAIN_STALE);
+    shown = state; s_bond_blocked = true;
+    assert(pet_service_train(&shown, 6, 3, 8)); process_action(&state, &queued);
+    assert(state.training_result == PET_TRAIN_SAVE_ERROR && state.storage_ok && bond_saves == previous_bond_saves);
+    assert(!memcmp(&state.house, &original, sizeof(original)));
+    handle_line(&state, "PET2 BOND");
+    assert(!strncmp(response, "PET2 REJECTED ", 14));
+    assert(!pet_service_train(&shown, 6, 1, 9) && !pet_service_train(&shown, 0, 0, 0));
     puts("pet_service: PASS (production transactions, commit-before-ACK, replay, failure preservation, stale UI actions)");
 }

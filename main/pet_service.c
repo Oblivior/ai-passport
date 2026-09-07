@@ -1,6 +1,7 @@
 #include "pet_service.h"
 #include "pet_protocol.h"
 #include "pet_house_store.h"
+#include "pet_bond_store.h"
 #include "pet_ble.h"
 #include "demo_radio.h"
 
@@ -22,6 +23,8 @@ typedef struct {
     uint32_t month;
     uint8_t expected_id;
     uint8_t choose_id; /* Zero feeds, otherwise selects this species. */
+    uint32_t date, ticket;
+    uint8_t score, attempts;
 } action_t;
 
 static SemaphoreHandle_t s_lock;
@@ -29,6 +32,8 @@ static QueueHandle_t s_actions;
 static pet_snapshot_t s_snapshot;
 static uint32_t s_generation;
 static bool s_storage_blocked;
+static bool s_bond_blocked;
+static uint32_t s_bond_generation;
 static bool s_wireless_request;
 static void publish(const pet_snapshot_t *state)
 {
@@ -66,6 +71,13 @@ static void reply(const pet_snapshot_t *state, const char *status)
 
 static void handle_line(pet_snapshot_t *state, const char *line)
 {
+    if (!s_wireless_request && !strcmp(line, "PET2 BOND")) {
+        printf("\nPET2 BOND version=1 active=%u points=%u date=%lu used=%u storage=%u\n",
+            state->house.active_id, pet_bond_points(&state->bond, state->house.active_id),
+            (unsigned long)state->bond.reward_date, state->bond.rewarded_today, state->bond_storage_ok);
+        fflush(stdout);
+        return;
+    }
     if (!s_wireless_request && !strcmp(line, "PET2 LINK")) {
         pet_ble_status_t ble;
         pet_ble_status(&ble);
@@ -124,6 +136,43 @@ static void handle_line(pet_snapshot_t *state, const char *line)
     reply(state, "ACK"); /* ACK is sent only after persistent commit. */
 }
 
+static void process_action(pet_snapshot_t *state, const action_t *action)
+{
+    if (!action->ticket) {
+        pet_house_t next = state->house;
+        if (pet_house_action(&next, action->expected_id, action->month, action->choose_id)) commit(state, &next);
+        return;
+    }
+    if (state->training_ticket && ((int32_t)(action->ticket - state->training_ticket) < 0 ||
+        (action->ticket == state->training_ticket && state->training_result != PET_TRAIN_SAVE_ERROR))) return;
+    state->training_ticket = action->ticket;
+    state->training_gain = 0;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if (!state->storage_ok || action->expected_id != state->house.active_id ||
+        action->date != state->house.life.date || !pet_house_stage(&state->house, state->house.active_id)) {
+        state->training_result = PET_TRAIN_STALE;
+    } else if (!state->synced_at || now - state->synced_at > 600000U) {
+        state->training_result = PET_TRAIN_OFFLINE;
+    } else if (s_bond_blocked) {
+        state->training_result = PET_TRAIN_SAVE_ERROR;
+    } else {
+        pet_bond_t next = state->bond;
+        int gained = pet_bond_reward(&next, action->expected_id, action->date, action->score, action->attempts);
+        if (gained < 0) state->training_result = PET_TRAIN_STALE;
+        else if (memcmp(&next, &state->bond, sizeof(next)) && !pet_bond_store_save(&next, &s_bond_generation)) {
+            state->bond_storage_ok = false;
+            state->training_result = PET_TRAIN_SAVE_ERROR;
+        } else {
+            state->bond = next;
+            state->bond_storage_ok = true;
+            state->training_gain = (uint8_t)gained;
+            state->training_result = gained ? PET_TRAIN_REWARDED : PET_TRAIN_PRACTICE;
+        }
+    }
+    state->revision++;
+    publish(state); /* Result and points become visible only after the NVS commit. */
+}
+
 static void worker(void *arg)
 {
     (void)arg;
@@ -132,6 +181,10 @@ static void worker(void *arg)
     pet_house_init(&state.house, NULL);
     s_storage_blocked = !nvs_ok;
     state.storage_ok = nvs_ok && pet_house_store_boot(&state.house, &s_generation, &s_storage_blocked);
+    pet_bond_init(&state.bond);
+    s_bond_generation = 0;
+    s_bond_blocked = !nvs_ok || pet_bond_store_load(&state.bond, &s_bond_generation) < 0;
+    state.bond_storage_ok = !s_bond_blocked;
     state.ready = true;
     state.revision = 1;
     publish(&state);
@@ -163,9 +216,8 @@ static void worker(void *arg)
         if (used && now - last_byte > 5000) { used = 0; discard = true; }
         action_t action;
         if (xQueueReceive(s_actions, &action, 0) == pdTRUE) {
-            pet_house_t next = state.house;
             /* A delayed button must never feed another pet or next month's egg. */
-            if (pet_house_action(&next, action.expected_id, action.month, action.choose_id)) commit(&state, &next);
+            process_action(&state, &action);
         }
         char c;
         for (unsigned i = 0; i < PET_LINE_MAX && read(STDIN_FILENO, &c, 1) == 1; i++) {
@@ -219,3 +271,10 @@ static bool queue_action(const pet_snapshot_t *shown, unsigned choose_id)
 }
 bool pet_service_eat(const pet_snapshot_t *shown) { return queue_action(shown, 0); }
 bool pet_service_choose(const pet_snapshot_t *shown, unsigned id) { return pet_catalog_find(id) && queue_action(shown, id); }
+bool pet_service_train(const pet_snapshot_t *shown, unsigned score, unsigned attempts, uint32_t ticket)
+{
+    if (!s_actions || !shown || !shown->ready || !ticket || attempts > 3 || score > attempts * 2) return false;
+    action_t action = {.expected_id = shown->house.active_id, .date = shown->house.life.date,
+        .ticket = ticket, .score = score, .attempts = attempts};
+    return xQueueSend(s_actions, &action, 0) == pdTRUE;
+}

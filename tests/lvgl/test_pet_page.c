@@ -1,8 +1,10 @@
 #include "demo.h"
 #include "pet_service.h"
 #include "pet_ble.h"
+#include "pet_training.h"
 #include "lvgl.h"
 #include "src/misc/lv_text_private.h"
+#include "src/display/lv_display_private.h"
 #include "pet_ui_text.h"
 #include "ui_pixel.h"
 #include <assert.h>
@@ -11,6 +13,7 @@
 
 static pet_snapshot_t snapshot;
 static bool fail_ui_save;
+static bool fail_ui_bond, hold_ui_bond;
 static pet_ble_status_t ble_status;
 void pet_ble_status(pet_ble_status_t *out) { *out = ble_status; }
 static uint16_t framebuffer[240 * 320];
@@ -32,8 +35,49 @@ bool pet_service_eat(const pet_snapshot_t *shown)
     if (ate) snapshot.revision++;
     return ate;
 }
+bool pet_service_train(const pet_snapshot_t *shown, unsigned score, unsigned attempts, uint32_t ticket)
+{
+    if (hold_ui_bond) return false;
+    if (snapshot.training_ticket == ticket && snapshot.training_result != PET_TRAIN_SAVE_ERROR) return true;
+    snapshot.training_ticket = ticket; snapshot.training_gain = 0;
+    if (shown->house.active_id != snapshot.house.active_id || shown->house.life.date != snapshot.house.life.date)
+        snapshot.training_result = PET_TRAIN_STALE;
+    else if (fail_ui_bond) { snapshot.training_result = PET_TRAIN_SAVE_ERROR; snapshot.bond_storage_ok = false; }
+    else if (!snapshot.synced_at) snapshot.training_result = PET_TRAIN_OFFLINE;
+    else {
+        int gain = pet_bond_reward(&snapshot.bond, shown->house.active_id, shown->house.life.date, score, attempts);
+        assert(gain >= 0); snapshot.training_gain = gain;
+        snapshot.training_result = gain ? PET_TRAIN_REWARDED : PET_TRAIN_PRACTICE;
+        snapshot.bond_storage_ok = true;
+    }
+    snapshot.revision++;
+    return true;
+}
 int bsp_battery_soc(void) { return 100; }
 int64_t esp_timer_get_time(void) { return (int64_t)lv_tick_get() * 1000; }
+
+/* Match main.c's ownership: switching screens does not delete the old one.
+ * Test placeholder menus must be freed, not accumulated across scenarios. */
+static void empty_screen(void)
+{
+    lv_obj_t *old = lv_screen_active();
+    lv_screen_load(lv_obj_create(NULL));
+    if (old) lv_obj_delete(old);
+    assert(lv_display_get_default()->screen_cnt == 4); /* One screen + three LVGL layers. */
+}
+static void enter_pet(void)
+{
+    lv_obj_t *old = lv_screen_active();
+    demo_pet_enter();
+    if (old) lv_obj_delete(old);
+    assert(lv_display_get_default()->screen_cnt == 4);
+}
+static unsigned timer_count(void)
+{
+    unsigned count = 0;
+    for (lv_timer_t *timer = lv_timer_get_next(NULL); timer; timer = lv_timer_get_next(timer)) count++;
+    return count;
+}
 
 static void flush(lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
 {
@@ -82,7 +126,13 @@ static void bounds(lv_obj_t *obj)
                 !lv_obj_check_type(other, &lv_bar_class) && !pet)) continue;
             lv_area_t b;
             lv_obj_get_coords(other, &b);
-            assert(a.x2 < b.x1 || b.x2 < a.x1 || a.y2 < b.y1 || b.y2 < a.y1);
+            if (!(a.x2 < b.x1 || b.x2 < a.x1 || a.y2 < b.y1 || b.y2 < a.y1)) {
+                fprintf(stderr, "overlap: %s (%d,%d..%d,%d) with %s (%d,%d..%d,%d)\n", text,
+                    (int)a.x1, (int)a.y1, (int)a.x2, (int)a.y2,
+                    lv_obj_check_type(other, &lv_label_class) ? lv_label_get_text(other) : "bar/pet",
+                    (int)b.x1, (int)b.y1, (int)b.x2, (int)b.y2);
+                assert(false);
+            }
         }
     }
     for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++) bounds(lv_obj_get_child(obj, i));
@@ -199,8 +249,8 @@ static void home_progress_scenarios(void)
     while (pet_house_eat(&snapshot.house)) {}
     snapshot.revision++;
     pet_house_t saved = snapshot.house;
-    lv_screen_load(lv_obj_create(NULL));
-    demo_pet_enter(); advance(1800);
+    empty_screen();
+    enter_pet(); advance(1800);
     capture("home-level-user");
     assert(has_text(lv_screen_active(), "Lv.1"));
     assert(has_text(lv_screen_active(), "进化 50%"));
@@ -220,7 +270,7 @@ static void home_progress_scenarios(void)
             set_stage(id, stage);
             saved = snapshot.house;
             unsigned percent = pet_ui_progress(stage, pet_house_meals(&saved, id), pet_house_days(&saved, id)).percent;
-            lv_screen_load(lv_obj_create(NULL)); demo_pet_enter(); advance(300);
+            empty_screen(); enter_pet(); advance(300);
             home_geometry(percent);
             demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
             for (unsigned i = 0; i < 10; i++) { advance(150); home_geometry(percent); }
@@ -237,8 +287,8 @@ static void partner_scenarios(void)
     usage.earned[3] = 5;
     assert(pet_house_sync(&snapshot.house, &usage));
     snapshot.revision++;
-    lv_screen_load(lv_obj_create(NULL));
-    demo_pet_enter(); advance(200);
+    empty_screen();
+    enter_pet(); advance(200);
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(200);
     assert(has_text(lv_screen_active(), "啊呜啊呜，真香！"));
     for (unsigned i = 0; i < 4; i++) demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
@@ -259,6 +309,7 @@ static void partner_scenarios(void)
     assert(pet_house_meals(&snapshot.house, PET_AGUMON) == 7);
     assert(pet_house_meals(&snapshot.house, PET_GABUMON) == 0 && pet_life_pending(&snapshot.house.life) == 4);
     /* Back to the original partner: neither reset nor a false evolution. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); /* Skip the new training page. */
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     advance(200); capture("partner-agumon-resting");
@@ -268,6 +319,7 @@ static void partner_scenarios(void)
     assert(snapshot.house.active_id == PET_AGUMON && pet_house_meals(&snapshot.house, PET_AGUMON) == 7);
     assert(!has_text(lv_screen_active(), "要进化啦！"));
     /* Failed adoption retains the partner and allows a visible retry. */
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
@@ -320,7 +372,7 @@ static void archive_key_scenarios(void)
 {
     set_stage(PET_AGUMON, PET_STAGE_SPARK);
     snapshot.house.archive_count = 0;
-    lv_screen_load(lv_obj_create(NULL)); demo_pet_enter(); advance(300);
+    empty_screen(); enter_pet(); advance(300);
     pet_house_t before = snapshot.house;
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300);
     capture("archive-empty-return");
@@ -334,7 +386,7 @@ static void archive_key_scenarios(void)
         for (unsigned i = 0; i < count; i++) snapshot.house.archive[i] = (pet_house_archive_t){
             .species_id = i + 1, .result = {.year = 2026, .month = 8, .stage = PET_STAGE_APEX}};
         before = snapshot.house;
-        lv_screen_load(lv_obj_create(NULL)); demo_pet_enter();
+        empty_screen(); enter_pet();
         demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300);
         char name[32]; snprintf(name, sizeof(name), "archive-count-%u", count); capture(name);
         assert(has_text(lv_screen_active(), count == 1 ? "仅此一只 · 确定返回" : "按确定：下一只伙伴"));
@@ -352,8 +404,109 @@ static void archive_key_scenarios(void)
     }
 }
 
+static void perfect_training(void)
+{
+    pet_training_t probe;
+    pet_training_start(&probe, lv_tick_get());
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    for (unsigned round = 0; round < 3; round++) {
+        uint32_t hit = probe.started_at + round * 5000 + 10;
+        while (pet_training_position(&probe, hit) < 48 || pet_training_position(&probe, hit) > 52) hit += 10;
+        advance(hit - lv_tick_get());
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_PRESS);
+        advance(150);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); /* Delayed release must not dismiss the result. */
+        if (round < 2) {
+            capture("training-hit");
+            for (unsigned i = 0; i < 8; i++) {
+                demo_pet_key(BSP_BTN_OK, BSP_BTN_PRESS);
+                demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
+            }
+        }
+    }
+    advance(300);
+    assert(has_text(lv_screen_active(), "完美配合！"));
+}
+static void training_scenarios(void)
+{
+    assert(lv_display_get_default()->screen_cnt <= 4);
+    for (unsigned id = 1; id <= 3; id++) {
+        set_stage(id, PET_STAGE_SCOUT);
+        pet_bond_init(&snapshot.bond); snapshot.bond_storage_ok = true;
+        snapshot.synced_at = lv_tick_get();
+        pet_house_t before = snapshot.house;
+        empty_screen(); enter_pet();
+        demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        advance(300); capture("training-lobby");
+        assert(has_text(lv_screen_active(), "伙伴训练场"));
+        perfect_training();
+        char name[40]; snprintf(name, sizeof(name), "training-result-%u", id); capture(name);
+        assert(snapshot.bond.points[id - 1] == 3 && snapshot.bond.rewarded_today == 1);
+        assert(!memcmp(&before, &snapshot.house, sizeof(before)));
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+        assert(has_text(lv_screen_active(), "伙伴训练场"));
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(800); capture("training-aim");
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(300);
+        assert(has_text(lv_screen_active(), "伙伴训练场") && snapshot.bond.rewarded_today == 1);
+        if (id == 1) {
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(15100); capture("training-timeout");
+            assert(has_text(lv_screen_active(), "没有出手，不计奖励") && snapshot.bond.rewarded_today == 1);
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            fail_ui_bond = true; perfect_training(); capture("training-save-error");
+            assert(snapshot.bond.points[0] == 3);
+            fail_ui_bond = false; demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            assert(snapshot.bond.points[0] == 6 && snapshot.bond.rewarded_today == 2);
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            perfect_training(); assert(snapshot.bond.points[0] == 9);
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            perfect_training(); capture("training-practice");
+            assert(snapshot.bond.points[0] == 9 && snapshot.bond.rewarded_today == 3);
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            snapshot.synced_at = 0;
+            perfect_training(); capture("training-offline");
+            assert(has_text(lv_screen_active(), "离线练习，不计奖励"));
+            demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+            hold_ui_bond = true; perfect_training(); capture("training-queue-full");
+            assert(has_text(lv_screen_active(), "暂未提交，请重试"));
+            hold_ui_bond = false;
+        }
+        demo_pet_exit(); empty_screen(); advance(3000);
+    }
+    for (unsigned points = 10; points <= 60; points += points == 10 ? 20 : 30) {
+        set_stage(PET_AGUMON, PET_STAGE_SCOUT);
+        pet_bond_init(&snapshot.bond); snapshot.bond.reward_date = snapshot.house.life.date;
+        snapshot.bond.points[0] = points;
+        empty_screen(); enter_pet();
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300);
+        capture("bond-greeting");
+        assert(has_text(lv_screen_active(), points >= 60 ? "最喜欢和你一起啦！" :
+            points >= 30 ? "它开心地向你摇摆！" : "它一眼就认出你啦！"));
+        demo_pet_exit();
+    }
+    set_stage(PET_AGUMON, PET_STAGE_EGG);
+    empty_screen(); enter_pet();
+    demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(300); capture("training-egg");
+    assert(has_text(lv_screen_active(), "孵化后就能一起训练"));
+    demo_pet_exit();
+    set_stage(PET_AGUMON, PET_STAGE_SPARK);
+    empty_screen(); advance(100);
+    unsigned timers_before = timer_count();
+    for (unsigned i = 0; i < 100; i++) {
+        enter_pet();
+        demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK); advance(90);
+        demo_pet_exit(); empty_screen(); advance(100);
+        assert(timer_count() == timers_before);
+    }
+    lv_mem_monitor_t memory; lv_mem_monitor(&memory);
+    assert(memory.free_biggest_size > 16000);
+    printf("training teardown: PASS (100 exits, one screen, no timer leak, largest free %zu)\n", memory.free_biggest_size);
+}
+
 int main(void)
 {
+    pet_bond_init(&snapshot.bond); snapshot.bond_storage_ok = true;
     lv_init();
     lv_display_t *display = lv_display_create(240, 320);
     static _Alignas(64) uint8_t buffer[240 * 20 * 2];
@@ -375,7 +528,7 @@ int main(void)
     pet_house_init(&snapshot.house, &legacy);
     snapshot.ready = snapshot.storage_ok = true;
     snapshot.revision = 1;
-    demo_pet_enter();
+    enter_pet();
     advance(300);
     capture("waiting");
     assert(has_text(lv_screen_active(), "尚未领养 · 从数码蛋开始"));
@@ -464,6 +617,9 @@ int main(void)
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(200);
+    /* Training is now between partner house and family. */
+    demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(200);
+    assert(has_text(lv_screen_active(), "我的家族图鉴"));
     capture("family");
     for (int i = 0; i < 100; i++) {
         demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
@@ -481,8 +637,8 @@ int main(void)
     snapshot.revision++;
     advance(6000);
     demo_pet_exit();
-    lv_screen_load(lv_obj_create(NULL));
-    demo_pet_enter();
+    empty_screen();
+    enter_pet();
     advance(200);
     capture("apex");
     demo_pet_key(BSP_BTN_OK, BSP_BTN_CLICK);
@@ -493,8 +649,8 @@ int main(void)
     for (unsigned index = 0; index < PET_CATALOG_COUNT; index++)
     for (unsigned stage = 0; stage < PET_STAGE_COUNT; stage++) {
         set_stage(pet_catalog_at(index)->id, stage);
-        lv_screen_load(lv_obj_create(NULL));
-        demo_pet_enter();
+        empty_screen();
+        enter_pet();
         advance(300);
         char name[32];
         snprintf(name, sizeof(name), "line-%u-stage-%u", index, stage);
@@ -509,15 +665,15 @@ int main(void)
         demo_pet_exit();
     }
     snapshot.storage_ok = false;
-    lv_screen_load(lv_obj_create(NULL));
-    demo_pet_enter();
+    empty_screen();
+    enter_pet();
     advance(300);
     capture("zh-save-error");
     demo_pet_exit();
     snapshot.storage_ok = true;
     snapshot.house.archive_count = 0;
-    lv_screen_load(lv_obj_create(NULL));
-    demo_pet_enter();
+    empty_screen();
+    enter_pet();
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK);
     advance(300);
     capture("zh-empty-family");
@@ -532,8 +688,8 @@ int main(void)
         snapshot.house.archive[0].result.stage = PET_STAGE_APEX;
         snapshot.house.archive[0].species_id = 0;
         snapshot.revision++;
-        lv_screen_load(lv_obj_create(NULL));
-        demo_pet_enter();
+        empty_screen();
+        enter_pet();
         advance(300);
         capture(route == PET_ROUTE_ARMOR ? "adult-armor" : route == PET_ROUTE_WILD ? "adult-wild" : "adult-explorer");
         advance(33000);
@@ -546,6 +702,8 @@ int main(void)
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         advance(200);
+        demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK); advance(200);
+        assert(has_text(lv_screen_active(), "我的家族图鉴"));
         capture("route-family");
         demo_pet_exit();
     }
@@ -558,8 +716,8 @@ int main(void)
     snapshot.house.life.daily_goal = 1000000000000ULL;
     snapshot.house.life.tokens_today = 1;
     snapshot.synced_at = 0;
-    lv_screen_load(lv_obj_create(NULL));
-    demo_pet_enter();
+    empty_screen();
+    enter_pet();
     demo_pet_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
     advance(300);
     capture("lunch-old-record");
@@ -582,10 +740,13 @@ int main(void)
     partner_scenarios();
     home_progress_scenarios();
     archive_key_scenarios();
+    training_scenarios();
     /* main.c loads its menu immediately, before allowing another LVGL tick. */
-    lv_screen_load(lv_obj_create(NULL));
+    empty_screen();
     advance(3000);
+    lv_obj_t *placeholder = lv_screen_active();
     demo_ble_enter();
+    lv_obj_delete(placeholder);
     advance(600);
     capture("link-unpaired");
     assert(has_text(lv_screen_active(), "长按确定：返回菜单"));
@@ -603,7 +764,7 @@ int main(void)
     advance(600);
     capture("link-error");
     demo_ble_exit();
-    lv_screen_load(lv_obj_create(NULL));
+    empty_screen();
     advance(3000);
     puts("pet_page: PASS (real pages, label bounds, eating, evolution, sleep, browsing, repeated keys, teardown)");
     lv_display_delete(display);

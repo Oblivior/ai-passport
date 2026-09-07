@@ -3,13 +3,14 @@
 #include "pet_view.h"
 #include "pet_ui_text.h"
 #include "pet_lunch.h"
+#include "pet_training.h"
 #include "ui_pixel.h"
 #include "bsp_battery.h"
 #include "esp_timer.h"
 
 #include <stdio.h>
 
-typedef enum { PAGE_HOME, PAGE_LUNCH, PAGE_PROGRESS, PAGE_LINEAGE, PAGE_PARTNERS, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
+typedef enum { PAGE_HOME, PAGE_LUNCH, PAGE_PROGRESS, PAGE_LINEAGE, PAGE_PARTNERS, PAGE_TRAINING, PAGE_ARCHIVE, PAGE_COUNT } pet_page_t;
 static pet_snapshot_t s_state;
 static pet_page_t s_page;
 static pet_pose_t s_pose;
@@ -25,6 +26,14 @@ static uint32_t s_delivery_at;
 static bool s_lunch_recent;
 static unsigned s_partner_cursor, s_choose_requested;
 static bool s_selecting, s_confirming;
+static pet_training_t s_training;
+static pet_snapshot_t s_training_shown;
+static uint32_t s_training_serial, s_training_ticket, s_training_sent_at;
+static bool s_training_sent;
+static bool s_training_press_consumed[3];
+static lv_timer_t *s_training_timer;
+static lv_obj_t *s_aim, *s_training_caption, *s_training_feedback, *s_shot;
+static void draw_page(void);
 
 static unsigned active_stage(void) { return pet_house_stage(&s_state.house, s_state.house.active_id); }
 static unsigned active_meals(void) { return pet_house_meals(&s_state.house, s_state.house.active_id); }
@@ -90,7 +99,11 @@ static const char *home_hint(void)
     if (s_pose == PET_POSE_EAT) return "啊呜啊呜，真香！";
     if (s_pose == PET_POSE_EVOLVE) return "要进化啦！";
     if (s_delivery_notice) return "饭盒送到啦，按确定开饭";
-    if (s_pose == PET_POSE_HAPPY) return "见到你真开心！";
+    if (s_pose == PET_POSE_HAPPY) {
+        unsigned bond = pet_bond_points(&s_state.bond, s_state.house.active_id);
+        return bond >= 60 ? "最喜欢和你一起啦！" : bond >= 30 ? "它开心地向你摇摆！" :
+            bond >= 10 ? "它一眼就认出你啦！" : "见到你真开心！";
+    }
     if (pet_life_pending(&s_state.house.life)) return "按确定：开饭啦";
     if (!s_state.house.life.date) return "连接电脑同步后孵化";
     if (s_pose == PET_POSE_SLEEP) return "睡觉中，按确定唤醒";
@@ -284,16 +297,127 @@ static void draw_archive(void)
     page_footer(count == 1 ? "仅此一只 · 确定返回" : "按确定：下一只伙伴");
 }
 
+static uint32_t training_color(void)
+{
+    return s_state.house.active_id == PET_AGUMON ? UI_ORANGE :
+        s_state.house.active_id == PET_GABUMON ? UI_SKY : UI_GRASS;
+}
+static const char *bond_unlock(unsigned points)
+{
+    return points < 10 ? "10 点：熟悉的招呼" : points < 30 ? "30 点：摇摆招呼" :
+        points < 60 ? "60 点：默契庆祝" : "默契满满，随时来玩";
+}
+static lv_obj_t *training_block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
+{
+    lv_obj_t *obj = lv_obj_create(parent);
+    lv_obj_set_pos(obj, x, y); lv_obj_set_size(obj, w, h);
+    lv_obj_set_style_pad_all(obj, 0, 0); lv_obj_set_style_border_width(obj, 0, 0);
+    lv_obj_set_style_radius(obj, 0, 0); lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    return obj;
+}
+static void training_submit(void)
+{
+    s_training_sent = pet_service_train(&s_training_shown, pet_training_score(&s_training),
+        pet_training_attempts(&s_training), s_training_ticket);
+    s_training_sent_at = lv_tick_get();
+}
+static void training_update(lv_timer_t *timer)
+{
+    (void)timer;
+    if (s_page != PAGE_TRAINING || !s_training.active) return;
+    uint32_t now = lv_tick_get();
+    pet_training_tick(&s_training, now);
+    if (s_training.finished) { training_submit(); draw_page(); return; }
+    unsigned round = pet_training_round(&s_training, now);
+    bool hit = s_training.attempts & (1U << round);
+    unsigned seconds = (PET_TRAIN_ROUND_MS - (now - s_training.started_at) % PET_TRAIN_ROUND_MS + 999U) / 1000U;
+    lv_label_set_text_fmt(s_training_caption, "第 %u/3 轮 · %u 秒", round + 1, seconds);
+    lv_obj_set_x(s_aim, 4 + (int)pet_training_position(&s_training, now) * 183 / 100);
+    lv_label_set_text(s_training_feedback, !hit ? "瞄准黄色中心，按确定" :
+        s_training.scores[round] == 2 ? "正中靶心！等下一轮" :
+        s_training.scores[round] == 1 ? "打中了！等下一轮" : "差一点，再接再厉");
+    pet_view_frame(s_pet, hit ? PET_POSE_HAPPY : PET_POSE_IDLE, now / 150U);
+    if (hit && now - s_training.hit_at < 600U) {
+        lv_obj_remove_flag(s_shot, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_x(s_shot, 111 + (int)(now - s_training.hit_at) * 57 / 600);
+    } else lv_obj_add_flag(s_shot, LV_OBJ_FLAG_HIDDEN);
+}
+static void draw_training(void)
+{
+    lv_obj_t *panel = page_panel();
+    unsigned points = pet_bond_points(&s_state.bond, s_state.house.active_id);
+    if (s_training.active) {
+        page_title(panel, "一起训练");
+        s_training_caption = label(panel, "", 30, UI_SKY_DARK);
+        s_pet = pet_view_create_digimon_pose(panel, s_state.house.active_id, active_stage(), 7, 56, PET_POSE_IDLE);
+        training_block(panel, 164, 81, 24, 28, UI_INK);
+        training_block(panel, 168, 85, 16, 20, UI_YELLOW);
+        training_block(panel, 172, 91, 8, 8, UI_ORANGE);
+        s_shot = training_block(panel, 111, 91, 14, 10, training_color());
+        /* Species-specific pixel feedback, not extra full-size frame buffers. */
+        if (s_state.house.active_id == PET_AGUMON) training_block(s_shot, 2, 2, 8, 5, UI_YELLOW);
+        else if (s_state.house.active_id == PET_GABUMON) training_block(s_shot, 6, 0, 2, 10, UI_PAPER);
+        else { training_block(s_shot, 0, 2, 14, 2, UI_PAPER); training_block(s_shot, 0, 6, 14, 2, UI_PAPER); }
+        training_block(panel, 4, 157, 186, 16, UI_MUTED);
+        training_block(panel, 68, 157, 58, 16, UI_GRASS);
+        training_block(panel, 87, 157, 20, 16, UI_YELLOW);
+        s_aim = training_block(panel, 4, 153, 3, 24, UI_INK);
+        s_training_feedback = label(panel, "", 185, UI_INK);
+        page_footer("确定出手 · 上下结束");
+        training_update(NULL);
+        return;
+    }
+    if (s_training.finished) {
+        unsigned score = pet_training_score(&s_training);
+        page_title(panel, score == 6 ? "完美配合！" : score >= 3 ? "配合不错！" : "再试一次！");
+        lv_obj_t *result = label(panel, "", 30, UI_SKY_DARK);
+        lv_label_set_text_fmt(result, "得分 %u/6 · 出手 %u/3", score, pet_training_attempts(&s_training));
+        s_pet = pet_view_create_digimon_pose(panel, s_training_shown.house.active_id,
+            pet_house_stage(&s_training_shown.house, s_training_shown.house.active_id), 47, 56, PET_POSE_HAPPY);
+        bool saved = s_state.training_ticket == s_training_ticket;
+        lv_obj_t *reward = label(panel, "", 153, UI_INK);
+        if (!saved) lv_label_set_text(reward, s_training_sent ? "正在保存这次默契..." : "暂未提交，请重试");
+        else if (s_state.training_result == PET_TRAIN_REWARDED)
+            lv_label_set_text_fmt(reward, "亲密 +%u · %u/100", s_state.training_gain, points);
+        else lv_label_set_text(reward, s_state.training_result == PET_TRAIN_SAVE_ERROR ? "保存失败，成长未变" :
+            s_state.training_result == PET_TRAIN_OFFLINE ? "离线练习，不计奖励" :
+            s_state.training_result == PET_TRAIN_STALE ? "伙伴或日期已变更" :
+            !pet_training_attempts(&s_training) ? "没有出手，不计奖励" : "自由练习，不计奖励");
+        progress_bar(panel, 176, points, UI_RED);
+        label(panel, bond_unlock(points), 185, UI_SKY_DARK);
+        page_footer(!saved && s_training_sent ? "正在保存..." : !saved || s_state.training_result == PET_TRAIN_SAVE_ERROR ?
+            "确定重试 · 上下返回" : "确定返回 · 上下翻页");
+        return;
+    }
+    page_title(panel, "伙伴训练场");
+    label(panel, active_form(active_stage()), 30, UI_SKY_DARK);
+    s_pet = pet_view_create_digimon_pose(panel, s_state.house.active_id, active_stage(), 47, 54, PET_POSE_IDLE);
+    lv_obj_t *bond = label(panel, "", 153, UI_INK);
+    lv_label_set_text_fmt(bond, "亲密 %u/100 · 余 %u 局", points,
+        pet_bond_remaining(&s_state.bond, s_state.house.life.date));
+    progress_bar(panel, 176, points, UI_RED);
+    label(panel, bond_unlock(points), 185, UI_SKY_DARK);
+    page_footer(!s_state.bond_storage_ok ? "亲密存档异常，请重启" : !active_stage() ? "孵化后就能一起训练" :
+        !sync_recent() ? "确定练习 · 同步后计奖励" : "确定开始 · 最多 15 秒");
+}
+
 static void draw_page(void)
 {
     if (!s_content) return;
+    if (s_training_timer) {
+        if (s_page == PAGE_TRAINING && s_training.active) lv_timer_resume(s_training_timer);
+        else lv_timer_pause(s_training_timer);
+    }
     lv_obj_clean(s_content);
     s_pet = NULL;
+    s_aim = s_training_caption = s_training_feedback = s_shot = NULL;
     if (s_page == PAGE_HOME) draw_home();
     else if (s_page == PAGE_LUNCH) draw_lunch();
     else if (s_page == PAGE_PROGRESS) draw_progress();
     else if (s_page == PAGE_LINEAGE) draw_lineage();
     else if (s_page == PAGE_PARTNERS) draw_partners();
+    else if (s_page == PAGE_TRAINING) draw_training();
     else draw_archive();
 }
 
@@ -325,6 +449,8 @@ static void tick(lv_timer_t *timer)
             s_page = PAGE_HOME;
         }
         if (identity_changed) {
+            s_training = (pet_training_t){0};
+            s_training_sent = false;
             s_pose = PET_POSE_IDLE;
             s_pose_at = s_action_at = lv_tick_get();
             s_eat_requested = false;
@@ -362,7 +488,16 @@ static void tick(lv_timer_t *timer)
     }
     if (s_eat_requested && lv_tick_elaps(s_action_at) >= 2000) s_eat_requested = false;
     if (s_choose_requested && lv_tick_elaps(s_action_at) >= 2000) { s_choose_requested = 0; draw_page(); }
-    pet_view_frame(s_pet, s_pose, s_frame++);
+    if (s_training.finished && s_training_sent && s_state.training_ticket != s_training_ticket &&
+        lv_tick_elaps(s_training_sent_at) >= 2000) { s_training_sent = false; draw_page(); }
+    if (s_page != PAGE_TRAINING || !s_training.active)
+        pet_view_frame(s_pet, s_page == PAGE_TRAINING ? (s_training.finished ? PET_POSE_HAPPY : PET_POSE_IDLE) : s_pose, s_frame);
+    if (s_pet && s_page == PAGE_HOME && s_pose == PET_POSE_HAPPY) {
+        unsigned bond = pet_bond_points(&s_state.bond, s_state.house.active_id);
+        if (bond >= 30) lv_obj_set_style_translate_x(s_pet, s_frame % 4 < 2 ? -3 : 3, 0);
+        if (bond >= 60) lv_obj_set_style_translate_y(s_pet, s_frame % 4 == 0 ? -8 : s_frame % 4 == 2 ? -4 : 0, 0);
+    }
+    s_frame++;
     if (s_frame % 10 == 0) {
         /* Do not rebuild the lunchbox on every timer: only a new snapshot or
          * the fresh/stale transition changes it. Keep allocation churn low. */
@@ -386,6 +521,9 @@ void demo_pet_enter(void)
     s_pose = PET_POSE_IDLE;
     s_action_at = s_pose_at = lv_tick_get();
     s_eat_requested = false;
+    s_training = (pet_training_t){0};
+    s_training_sent = false;
+    for (unsigned i = 0; i < 3; i++) s_training_press_consumed[i] = false;
     s_delivery_notice = false;
     s_form_preview = active_stage();
     s_archive = s_state.house.archive_count ? s_state.house.archive_count - 1 : 0;
@@ -403,21 +541,63 @@ void demo_pet_enter(void)
     lv_obj_set_style_pad_all(s_content, 0, 0);
     draw_page();
     s_timer = lv_timer_create(tick, 150, NULL);
+    s_training_timer = lv_timer_create(training_update, 30, NULL);
+    lv_timer_pause(s_training_timer);
     lv_screen_load(s_scr);
 }
 
 void demo_pet_exit(void)
 {
     if (s_timer) { lv_timer_delete(s_timer); s_timer = NULL; }
+    if (s_training_timer) { lv_timer_delete(s_training_timer); s_training_timer = NULL; }
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
     s_content = s_battery = s_pet = NULL;
+    s_aim = s_training_caption = s_training_feedback = s_shot = NULL;
 }
 
 void demo_pet_key(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
-    if (ev != BSP_BTN_CLICK) return;
+    if ((unsigned)btn >= 3) return;
+    /* Games judge the existing low-latency PRESS event. Swallow its eventual
+     * CLICK even if that press finished/cancelled the game, so a result cannot
+     * disappear immediately and a delayed release cannot hit the next round. */
+    if (ev == BSP_BTN_PRESS && s_page == PAGE_TRAINING && s_training.active) {
+        s_training_press_consumed[btn] = true;
+    } else if (ev == BSP_BTN_CLICK) {
+        if (s_training_press_consumed[btn]) { s_training_press_consumed[btn] = false; return; }
+        if (s_page == PAGE_TRAINING && s_training.active && btn == BSP_BTN_OK) return;
+    } else {
+        if (ev == BSP_BTN_DOUBLE) s_training_press_consumed[btn] = false;
+        return;
+    }
     if (s_choose_requested) return;
     s_action_at = lv_tick_get();
+    if (s_page == PAGE_TRAINING) {
+        if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
+            bool was_active = s_training.active;
+            s_training = (pet_training_t){0};
+            if (was_active) { draw_page(); return; }
+        } else if (btn == BSP_BTN_OK) {
+            if (s_training.active) {
+                pet_training_hit(&s_training, lv_tick_get());
+                if (s_training.finished) { training_submit(); draw_page(); }
+                else training_update(NULL);
+            } else if (s_training.finished) {
+                bool saved = s_state.training_ticket == s_training_ticket;
+                if ((!saved && !s_training_sent) || (saved && s_state.training_result == PET_TRAIN_SAVE_ERROR)) training_submit();
+                else if (saved) s_training = (pet_training_t){0};
+                draw_page();
+            } else if (active_stage() && s_state.ready) {
+                s_training_shown = s_state;
+                if (!++s_training_serial) ++s_training_serial;
+                s_training_ticket = s_training_serial;
+                s_training_sent = false;
+                pet_training_start(&s_training, lv_tick_get());
+                draw_page();
+            }
+            return;
+        }
+    }
     if (s_page == PAGE_PARTNERS && s_selecting) {
         if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
             if (s_confirming) s_confirming = false;
