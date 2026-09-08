@@ -119,8 +119,10 @@ def validate_backup(flash, table):
         raise ValueError("原机分区与固件不一致；禁止刷写，请走厂商兼容安装流程")
     if RECOVERY_BOOT_MARKER not in flash[:0x8000]:
         raise ValueError("原机缺少已知 Recovery 启动钩子；本工具不会替换 bootloader")
-    if flash[0x700000] != 0xE9 or flash[0x356000:0x35A000] == b"\xff" * 0x4000:
-        raise ValueError("设备身份或 Recovery 缺失；请先通过厂商流程恢复，不在这里修复")
+    if flash[0x356000:0x35A000] == b"\xff" * 0x4000:
+        raise ValueError("设备身份区为空；请先通过厂商流程恢复，不在这里修复")
+    if flash[0x700000] != 0xE9:
+        raise ValueError("Recovery 区没有可识别固件，未刷写。请保留备份并联系维护者；不要全盘擦除")
 
 
 class EspDevice:
