@@ -278,11 +278,14 @@ class DesktopDelegate(F.NSObject):
             A.NSApp.replyToApplicationShouldTerminate_(True)
 
     def show_(self, _):
-        self.window.makeKeyAndOrderFront_(None)
+        # Dock/menu activation must not steal focus from a safety confirmation.
+        window = A.NSApp.modalWindow() or self.window
+        window.makeKeyAndOrderFront_(None)
         A.NSApp.activateIgnoringOtherApps_(True)
 
     def applicationShouldHandleReopen_hasVisibleWindows_(self, app, visible):
-        self.show_(None)
+        if not visible:
+            self.show_(None)
         return True
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, _):

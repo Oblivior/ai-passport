@@ -12,6 +12,7 @@ import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
+import zipfile
 from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -19,6 +20,31 @@ import pet_desktop_core as d
 
 
 class PreferencesTests(unittest.TestCase):
+    def test_zip_preserves_utf8_permissions_and_internal_symlinks(self):
+        from build_pet_desktop import write_zip
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / "package"
+            root.mkdir()
+            file = root / "先读我.txt"
+            file.write_text("公开说明", encoding="utf-8")
+            file.chmod(0o755)
+            (root / "alias").symlink_to(file.name)
+            output = Path(home) / "pilot.zip"
+            write_zip(root, output)
+            with zipfile.ZipFile(output) as archive:
+                info = archive.getinfo("package/先读我.txt")
+                self.assertTrue(info.flag_bits & 0x800)
+                self.assertEqual(info.external_attr >> 16 & 0o777, 0o755)
+                self.assertEqual(archive.read("package/alias").decode(), file.name)
+                self.assertEqual(archive.getinfo("package/alias").external_attr >> 16 & 0o170000, 0o120000)
+                self.assertIsNone(archive.testzip())
+            with self.assertRaises(FileExistsError):
+                write_zip(root, output)
+            (root / "outside").symlink_to(Path(home) / "private")
+            with self.assertRaises(ValueError):
+                write_zip(root, Path(home) / "unsafe.zip")
+            self.assertFalse((Path(home) / "unsafe.zip").exists())
+
     def test_private_roundtrip_without_raw_usage(self):
         with tempfile.TemporaryDirectory() as home:
             prefs = d.Preferences(home)

@@ -4,16 +4,37 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
+import zipfile
 
 from pet_install import image_bytes, load_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "AI Pet Passport"
+
+
+def write_zip(source, output):
+    """UTF-8 ZIP with Unix executable/symlink modes, without Finder metadata."""
+    source = Path(source)
+    paths = sorted(source.rglob("*"))
+    for path in paths:
+        if path.is_symlink() and not path.resolve().is_relative_to(source.resolve()):
+            raise ValueError("Bundle symlink points outside the delivery directory")
+    with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in paths:
+            name = source.name + "/" + path.relative_to(source).as_posix()
+            directory = path.is_dir() and not path.is_symlink()
+            info = zipfile.ZipInfo(name + ("/" if directory else ""))
+            info.create_system = 3
+            info.external_attr = path.lstat().st_mode << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            data = os.readlink(path).encode("utf-8") if path.is_symlink() else b"" if directory else path.read_bytes()
+            archive.writestr(info, data)
 
 
 def icon(path):
@@ -120,7 +141,7 @@ app = BUNDLE(coll, name={NAME + ".app"!r}, icon={str(resources / "icon.icns")!r}
             shutil.copyfile(ROOT / "docs/assets" / (stem + suffix), delivery / (stem + suffix))
     (delivery / "firmware-manifest.json").write_text(json.dumps(manifest, indent=2))
     archive = output / (delivery.name + ".zip")
-    subprocess.run(["ditto", "-c", "-k", "--keepParent", str(delivery), str(archive)], check=True)
+    write_zip(delivery, archive)
     archive.with_suffix(".sha256").write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + "  " + archive.name + "\n")
     print("App built and smoke-tested:", built)
     print("Pilot ZIP:", archive)
