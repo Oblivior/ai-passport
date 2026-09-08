@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- Refine desktop companion 0.2.1 with a compact identity header, quiet footer
+  version, a highlighted food tile, consistent flat native buttons and one
+  start/pause control. Keep locked settings readable, distinguish worker status
+  from badge connectivity, and retain explicit snapshot dates. Preserve feeding,
+  pairing, saves and USB safety; add presentation-state regression tests. Finish
+  asynchronous quit from worker cleanup instead of relying on a suspended UI timer.
+
 - Add a native Chinese Apple Silicon desktop companion with embedded Python,
   menu-bar start/stop, cancellable Kaboo export, authenticated delivery status,
   safe USB installation and explicit opt-in login launch. Disable official

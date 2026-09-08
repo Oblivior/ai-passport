@@ -20,6 +20,24 @@ import pet_desktop_core as d
 
 
 class PreferencesTests(unittest.TestCase):
+    def test_controls_offer_stop_without_enabling_usb_cancellation(self):
+        self.assertEqual(d.feeding_control(False, None, False, False)[:2], ("开始送饭", True))
+        self.assertEqual(d.feeding_control(True, "feed", False, False)[:2], ("暂停送饭", True))
+        self.assertEqual(d.feeding_control(True, "source", False, False)[:2], ("停止检测", True))
+        self.assertFalse(d.feeding_control(True, "usb", False, False)[1])
+        self.assertFalse(d.feeding_control(True, "feed", True, False)[1])
+        self.assertEqual(d.feeding_control(True, "feed", False, True)[2], "等待重试")
+        self.assertEqual(d.feeding_control(False, None, False, True)[2], "需要检查")
+
+    def test_delivery_time_distinguishes_old_dates_and_invalid_data(self):
+        now = dt.datetime.now().astimezone().replace(hour=12, minute=30, second=0)
+        self.assertIn("12:30:00", d.delivery_caption(now.isoformat(), now))
+        previous = now - dt.timedelta(days=1)
+        self.assertIn(previous.strftime("%m-%d"), d.delivery_caption(previous.isoformat(), now))
+        self.assertIn("非实时", d.delivery_caption(now.isoformat(), now))
+        self.assertIn("尚未收到", d.delivery_caption(None))
+        self.assertIn("尚未收到", d.delivery_caption("bad"))
+
     def test_zip_preserves_utf8_permissions_and_internal_symlinks(self):
         from build_pet_desktop import write_zip
         with tempfile.TemporaryDirectory() as home:
@@ -137,14 +155,17 @@ class PreferencesTests(unittest.TestCase):
         worker = d.Worker(lambda *event: events.append(event))
         async def job():
             began.set()
-            await asyncio.sleep(20)
+            try:
+                await asyncio.sleep(20)
+            finally:
+                events.append(("cleaned", None))
         worker.start("source", lambda: worker.run_async(job))
         self.assertTrue(began.wait(2))
         self.assertFalse(worker.start("feed", lambda: None))
         self.assertTrue(worker.stop())
         worker.thread.join(3)
         self.assertFalse(worker.busy)
-        self.assertEqual(events, [("finished", None)])
+        self.assertEqual(events, [("cleaned", None), ("finished", None)])
 
     def test_usb_is_not_cancellable_and_unknown_errors_are_redacted(self):
         worker = d.Worker(Mock())

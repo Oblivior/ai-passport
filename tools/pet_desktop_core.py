@@ -44,6 +44,29 @@ def stage_name(stage):
     return names[int(stage)] if str(stage) in tuple(map(str, range(7))) else "—"
 
 
+def feeding_control(busy, kind, stopping, problem):
+    """Presentation only: never imply that a running worker proves a live badge."""
+    if busy and kind == "usb":
+        return "设备操作中…", False, "USB 操作中", "muted"
+    if busy and stopping:
+        return "正在停止…", False, "正在停止", "muted"
+    if busy:
+        return ("停止检测" if kind == "source" else "暂停送饭", True,
+                "等待重试" if problem else "检测 Kaboo" if kind == "source" else "自动送饭中",
+                "warning" if problem else "grass")
+    return "开始送饭", True, "需要检查" if problem else "送饭已暂停", "warning" if problem else "muted"
+
+
+def delivery_caption(value, now=None):
+    try:
+        stamp = dt.datetime.fromisoformat(value).astimezone()
+        today = now or dt.datetime.now().astimezone()
+        pattern = "%H:%M:%S" if stamp.date() == today.date() else "%m-%d %H:%M" if stamp.year == today.year else "%Y-%m-%d %H:%M"
+        return "最近送达  " + stamp.strftime(pattern) + "  ·  数据快照，非实时状态"
+    except (ValueError, TypeError):
+        return "尚未收到胸牌确认  ·  数据以最近一次送达为准"
+
+
 class Preferences:
     def __init__(self, home=DATA_HOME):
         self.home = private_dir(home)

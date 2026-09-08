@@ -121,7 +121,7 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name={NAME!r},
           debug=False, strip=False, upx=False, console=False, target_arch="arm64")
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name={NAME!r})
 app = BUNDLE(coll, name={NAME + ".app"!r}, icon={str(resources / "icon.icns")!r},
-    bundle_identifier="io.oblivior.aipetpassport", version="0.2.0",
+    bundle_identifier="io.oblivior.aipetpassport", version="0.2.1",
     info_plist={{"NSHighResolutionCapable": True, "LSMinimumSystemVersion": "12.3",
                 "NSBluetoothAlwaysUsageDescription": "通过蓝牙向你已配对的 Passport 发送 Kaboo 饭盒，并确认送达。",
                 "NSBluetoothPeripheralUsageDescription": "连接你已配对的 Passport 胸牌。"}})
@@ -131,7 +131,7 @@ app = BUNDLE(coll, name={NAME + ".app"!r}, icon={str(resources / "icon.icns")!r}
     built = output / "dist" / (NAME + ".app")
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(built)], check=True)
     subprocess.run([str(built / "Contents/MacOS" / NAME), "--smoke-test"], check=True)
-    delivery = output / "AI-Pet-Passport-Mac-0.2.0-arm64"
+    delivery = output / "AI-Pet-Passport-Mac-0.2.1-arm64"
     delivery.mkdir()
     shutil.copytree(built, delivery / built.name, symlinks=True)
     shutil.copyfile(ROOT / "tools/pet-desktop-readme.txt", delivery / "先读我.txt")

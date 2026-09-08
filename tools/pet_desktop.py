@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from functools import lru_cache
 import io
 import json
 import os
@@ -19,12 +20,14 @@ from PyObjCTools import AppHelper
 import pet_install as installer
 import pet_desktop_core as core
 
-VERSION = "0.2.0"
-WIDTH, HEIGHT = 864, 700
-COLORS = {"sky": "E9F4FC", "blue": "215CE5", "ink": "16304C",
-          "meal": "F2C94C", "grass": "58A36A", "paper": "FFFFFF", "muted": "586C81"}
+VERSION = "0.2.1"
+WIDTH, HEIGHT = 864, 644
+COLORS = {"sky": "F2F5F9", "blue": "275DDA", "ink": "1C3048",
+          "meal": "FFF2C6", "grass": "267354", "paper": "FFFFFF", "muted": "596A7E",
+          "line": "E3E9F1", "softblue": "EDF2FC", "warning": "936216"}
 
 
+@lru_cache(maxsize=None)
 def color(name):
     value = COLORS[name]
     return A.NSColor.colorWithSRGBRed_green_blue_alpha_(
@@ -54,6 +57,39 @@ def panel(parent, x, y, width, height, tone):
     view.layer().setCornerRadius_(12)
     parent.addSubview_(view)
     return view
+
+
+def rule(parent, x, y, width):
+    view = panel(parent, x, y, width, 1, "line")
+    view.layer().setCornerRadius_(0)
+
+
+class FlatButton(A.NSButton):
+    """Native keyboard/AX button with one consistent, non-gradient appearance."""
+    @objc.python_method
+    def paint(self):
+        primary = getattr(self, "primary", False)
+        self.layer().setBackgroundColor_(color("blue" if primary and self.isEnabled() else "softblue" if self.isEnabled() else "sky").CGColor())
+        tone = "paper" if primary and self.isEnabled() else "blue" if self.isEnabled() else "muted"
+        title = F.NSAttributedString.alloc().initWithString_attributes_(self.title(), {
+            A.NSForegroundColorAttributeName: color(tone),
+            A.NSFontAttributeName: A.NSFont.systemFontOfSize_weight_(13, A.NSFontWeightMedium),
+        })
+        self.setAttributedTitle_(title)
+
+    def setEnabled_(self, enabled):
+        if self.isEnabled() == enabled:
+            return
+        objc.super(FlatButton, self).setEnabled_(enabled)
+        if self.layer() is not None:
+            self.paint()
+
+    def setTitle_(self, title):
+        if self.title() == title:
+            return
+        objc.super(FlatButton, self).setTitle_(title)
+        if self.layer() is not None:
+            self.paint()
 
 
 class ProgressWriter(io.TextIOBase):
@@ -92,13 +128,15 @@ class DesktopDelegate(F.NSObject):
 
     @objc.python_method
     def button(self, text, action, x, y, width, height=32, primary=False):
-        view = A.NSButton.buttonWithTitle_target_action_(text, self, action)
+        view = FlatButton.buttonWithTitle_target_action_(text, self, action)
         view.setFrame_(rect(x, y, width, height))
-        view.setBezelStyle_(A.NSBezelStyleRounded)
-        view.setFont_(A.NSFont.systemFontOfSize_(14))
-        if primary:
-            view.setBezelColor_(color("blue"))
-            view.setContentTintColor_(color("paper"))
+        view.setBezelStyle_(A.NSBezelStyleRegularSquare)
+        view.setBordered_(False)
+        view.setFocusRingType_(A.NSFocusRingTypeExterior)
+        view.setWantsLayer_(True)
+        view.layer().setCornerRadius_(7)
+        view.primary = primary
+        view.paint()
         self.content.addSubview_(view)
         return view
 
@@ -113,56 +151,73 @@ class DesktopDelegate(F.NSObject):
         self.window.setAppearance_(A.NSAppearance.appearanceNamed_(A.NSAppearanceNameAqua))
         self.window.setBackgroundColor_(color("sky"))
         self.content = self.window.contentView()
-        panel(self.content, 24, 20, 816, 94, "blue")
-        label(self.content, "伙伴补给站", 46, 31, 500, 44, 29, "paper", True)
-        label(self.content, "Kaboo 的日常使用，变成随身伙伴的食物。", 48, 79, 620, 22, 13, "paper")
-        panel(self.content, 680, 39, 136, 34, "meal")
-        label(self.content, "饭盒  /  " + VERSION, 697, 43, 115, 24, 12, "ink", True)
-        panel(self.content, 24, 130, 510, 234, "paper")
-        panel(self.content, 550, 130, 290, 234, "paper")
-        self.status = label(self.content, "准备好送饭了吗？", 46, 148, 462, 32, 21, bold=True)
-        self.detail = label(self.content, "选好 Kaboo 和胸牌配对，再开始自动送饭。", 46, 189, 460, 48, 13, "muted")
+        app_icon = A.NSImageView.alloc().initWithFrame_(rect(26, 26, 46, 46))
+        app_icon.setImage_(A.NSImage.imageNamed_(A.NSImageNameApplicationIcon))
+        app_icon.setImageScaling_(A.NSImageScaleProportionallyUpOrDown)
+        self.content.addSubview_(app_icon)
+        label(self.content, "伙伴补给站", 84, 20, 420, 34, 23, bold=True)
+        label(self.content, "Kaboo 的日常使用，变成伙伴的每一餐。", 85, 58, 490, 22, 12, "muted")
+        self.mode_dot = panel(self.content, 696, 38, 7, 7, "muted")
+        self.mode = label(self.content, "尚未开始", 712, 31, 126, 23, 12, "muted")
+        panel(self.content, 24, 104, 510, 232, "paper")
+        panel(self.content, 550, 104, 290, 232, "paper")
+        self.status = label(self.content, "准备好送饭了吗？", 46, 122, 464, 30, 20, bold=True)
+        self.detail = label(self.content, "选好 Kaboo 和胸牌配对，再开始自动送饭。", 46, 164, 460, 42, 13, "muted")
+        panel(self.content, 42, 216, 138, 66, "meal")
         self.values = []
-        for x, name in ((46, "待吃食物"), (204, "伙伴阶段"), (368, "陪伴天数")):
-            label(self.content, name, x, 249, 142, 23, 12, "muted")
-            self.values.append(label(self.content, "—", x, 276, 140, 42, 29, "ink", True))
-        self.last = label(self.content, "尚未收到胸牌的送达确认", 46, 329, 470, 22, 12, "muted")
-        self.start_button = self.button("开始自动送饭", "start:", 572, 151, 246, 44, True)
-        self.stop_button = self.button("停止送饭", "stop:", 572, 207, 246, 38)
+        for x, name in ((56, "待吃食物"), (220, "进化阶段"), (390, "陪伴天数")):
+            label(self.content, name, x, 223, 120, 20, 11, "muted")
+            self.values.append(label(self.content, "—", x, 245, 120, 34, 25, "ink", True))
+        self.last = label(self.content, "尚未收到胸牌确认 · 以下数据来自最近一次送达", 46, 302, 474, 19, 11, "muted")
+        label(self.content, "自动送饭", 572, 122, 230, 26, 16, bold=True)
+        label(self.content, "每轮完成后，约一分钟再同步", 572, 157, 246, 22, 12, "muted")
+        self.start_button = self.button("开始送饭", "toggleFeeding:", 572, 190, 246, 40, True)
         self.login_check = A.NSButton.checkboxWithTitle_target_action_("登录后启动并自动送饭", self, "loginChanged:")
-        self.login_check.setFrame_(rect(576, 268, 244, 28))
+        self.login_check.setFrame_(rect(575, 248, 244, 26))
         self.login_check.setFont_(A.NSFont.systemFontOfSize_(12))
         self.login_check.setState_(int(self.prefs.data["login"]))
         self.content.addSubview_(self.login_check)
-        label(self.content, "约每分钟同步 · 不用就休息\n关闭窗口后可从菜单栏操作", 577, 307, 237, 42, 12, "muted")
-        panel(self.content, 24, 382, 816, 154, "paper")
-        label(self.content, "本机连接", 46, 395, 200, 26, 16, bold=True)
-        label(self.content, "Kaboo 程序", 46, 435, 96, 24, 13, "muted")
-        self.kaboo = A.NSTextField.alloc().initWithFrame_(rect(146, 432, 470, 27))
+        label(self.content, "关窗口后，仍可从菜单栏管理", 576, 298, 242, 20, 11, "muted")
+        panel(self.content, 24, 354, 816, 164, "paper")
+        label(self.content, "连接设置", 46, 369, 200, 26, 15, bold=True)
+        self.settings_note = label(self.content, "", 574, 373, 240, 20, 11, "muted")
+        label(self.content, "Kaboo 程序", 46, 415, 96, 24, 13, "muted")
+        self.kaboo = A.NSTextField.alloc().initWithFrame_(rect(146, 413, 470, 22))
         self.kaboo.setPlaceholderString_("选择你已安装的 Kaboo CLI")
         self.kaboo.setStringValue_(self.prefs.data["kaboo"] or core.discover_kaboo())
-        self.kaboo.setFont_(A.NSFont.systemFontOfSize_(12))
+        self.kaboo.setFont_(A.NSFont.monospacedSystemFontOfSize_weight_(11, A.NSFontWeightRegular))
+        self.kaboo.setTextColor_(color("muted"))
+        self.kaboo.setBordered_(False)
+        self.kaboo.setBackgroundColor_(color("sky"))
+        self.kaboo.setFocusRingType_(A.NSFocusRingTypeExterior)
+        self.kaboo.cell().setUsesSingleLineMode_(True)
+        self.kaboo.cell().setLineBreakMode_(A.NSLineBreakByTruncatingMiddle)
         self.content.addSubview_(self.kaboo)
-        self.controls += [self.button("选择…", "chooseKaboo:", 626, 430, 83),
-                          self.button("检测", "checkSource:", 720, 430, 96)]
-        label(self.content, "胸牌配对", 46, 484, 96, 24, 13, "muted")
-        self.config_label = label(self.content, "尚未选择", 146, 483, 280, 30, 12, "muted")
-        self.controls += [self.button("载入配对…", "chooseKey:", 448, 478, 112),
-                          self.button("使用旧版配对", "legacyKey:", 568, 478, 130),
-                          self.button("USB 配对", "pairUSB:", 704, 478, 114)]
-        panel(self.content, 24, 554, 816, 99, "paper")
-        label(self.content, "安装与维护", 46, 570, 170, 26, 16, bold=True)
-        label(self.content, "仅通过 USB 操作，备份先行。分区或恢复区不兼容时会停止。", 46, 615, 760, 22, 12, "muted")
-        self.maintenance += [self.button("检查并备份", "backup:", 350, 567, 140),
-                             self.button("安装固件", "installFirmware:", 504, 567, 136),
-                             self.button("查看备份", "showBackups:", 654, 567, 162)]
-        label(self.content, "仅用本机 Kaboo 数据 · 不接官方月结 · 不上传原始用量", 36, 671, 800, 20, 12, "muted")
+        self.controls += [self.button("选择…", "chooseKaboo:", 630, 409, 82, 30),
+                          self.button("检测", "checkSource:", 722, 409, 94, 30)]
+        rule(self.content, 46, 450, 770)
+        label(self.content, "胸牌配对", 46, 472, 96, 24, 13, "muted")
+        self.config_label = label(self.content, "尚未选择", 146, 471, 272, 26, 12, "muted")
+        self.controls += [self.button("载入配对…", "chooseKey:", 448, 465, 112, 30),
+                          self.button("使用旧版配对", "legacyKey:", 570, 465, 132, 30),
+                          self.button("USB 配对", "pairUSB:", 712, 465, 104, 30)]
+        label(self.content, "安装与维护", 36, 543, 220, 24, 14, bold=True)
+        label(self.content, "仅通过 USB 操作。先备份，再检查；不兼容时停止。", 36, 581, 780, 22, 12, "muted")
+        self.maintenance += [self.button("检查并备份", "backup:", 402, 536, 134, 32),
+                             self.button("安装固件", "installFirmware:", 550, 536, 126, 32),
+                             self.button("查看备份", "showBackups:", 690, 536, 126, 32)]
+        rule(self.content, 36, 610, 792)
+        label(self.content, "本机 Kaboo 数据  ·  私有配对  ·  不上传原始用量", 36, 622, 660, 18, 10, "muted")
+        version = label(self.content, "v" + VERSION, 748, 621, 78, 18, 11, "muted")
+        version.setFont_(A.NSFont.monospacedSystemFontOfSize_weight_(11, A.NSFontWeightRegular))
+        version.setAlignment_(A.NSTextAlignmentRight)
         self.menus()
         self.show_preferences()
         self.refresh_(None)
         self.timer = F.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             0.25, self, "refresh:", None, True)
         self.window.center()
+        self.window.setInitialFirstResponder_(self.start_button)
         self.show_(None)
 
     @objc.python_method
@@ -219,10 +274,9 @@ class DesktopDelegate(F.NSObject):
         last = self.prefs.data["last"]
         self.values[0].setStringValue_(str(last.get("pending", "—")))
         self.values[1].setStringValue_(core.stage_name(last.get("stage")))
-        self.values[1].setFont_(A.NSFont.systemFontOfSize_(23))
+        self.values[1].setFont_(A.NSFont.systemFontOfSize_weight_(22, A.NSFontWeightMedium))
         self.values[2].setStringValue_(str(last.get("days", "—")))
-        if last.get("at"):
-            self.last.setStringValue_("上次确认：" + last["at"].replace("T", " ")[:19] + " · 非实时在线状态")
+        self.last.setStringValue_(core.delivery_caption(last.get("at")))
 
     @objc.python_method
     def event(self, kind, data):
@@ -237,8 +291,8 @@ class DesktopDelegate(F.NSObject):
             self.phase = data
             texts = {"source": ("正在读取 Kaboo", "只读取本机累计导出，不保存原始内容。"),
                      "discovering": ("正在寻找你的胸牌", "请保持胸牌开机、电脑蓝牙开启。只连接已配对设备。"),
-                     "sending": ("正在确认饭盒送达", "蓝牙写入不等于投食成功，正在等待胸牌认证确认。"),
-                     "waiting": ("饭盒已确认送达", "稍后自动同步下一轮。食物留在胸牌上，按确定喂给伙伴。")}
+                     "sending": ("正在送出这一餐", "等待胸牌确认收到，确认前不会显示送达。"),
+                     "waiting": ("饭盒已送达", "在胸牌上按确定喂给伙伴，下一轮会自动同步。")}
             title, detail = texts[data]
             self.status.setStringValue_(title)
             self.detail.setStringValue_(detail)
@@ -249,6 +303,7 @@ class DesktopDelegate(F.NSObject):
         elif kind == "progress":
             self.detail.setStringValue_(data)
         elif kind == "source_ok":
+            self.problem = False
             self.status.setStringValue_("Kaboo 已准备好")
             self.detail.setStringValue_("今日累计数据检查通过。选择胸牌配对后即可开始送饭。")
         elif kind == "paired":
@@ -264,18 +319,38 @@ class DesktopDelegate(F.NSObject):
                 self.status.setStringValue_("已停止送饭")
                 self.detail.setStringValue_("现有食物和成长保留。下次点击开始即可继续。")
             self.phase = "paused"
+            if self.quit_pending:
+                # NSTerminateLater can suspend the regular UI timer. The worker
+                # emits this only after export/radio cleanup has completed.
+                self.quit_pending = False
+                A.NSApp.replyToApplicationShouldTerminate_(True)
 
     def refresh_(self, _):
         busy = self.worker.busy
-        self.start_button.setEnabled_(not busy)
-        self.stop_button.setEnabled_(busy and self.worker.kind in ("feed", "source") and not self.worker.stop_requested.is_set())
-        self.kaboo.setEnabled_(not busy)
+        title, enabled, mode, tone = core.feeding_control(busy, self.worker.kind,
+                                                        self.worker.stop_requested.is_set(), self.problem)
+        self.start_button.setTitle_(title)
+        self.start_button.setEnabled_(enabled)
+        self.mode.setStringValue_(mode)
+        self.mode.setTextColor_(color(tone))
+        self.mode_dot.layer().setBackgroundColor_(color(tone).CGColor())
+        self.kaboo.setEditable_(not busy)
+        self.kaboo.setSelectable_(True)
+        self.kaboo.setToolTip_(str(self.kaboo.stringValue()))
+        self.settings_note.setStringValue_("修改连接前，请先暂停送饭" if busy and self.worker.kind == "feed" else "操作结束后可修改连接" if busy else "配对与用量只保存在本机")
         for control in self.controls + self.maintenance:
             control.setEnabled_(not busy)
         self.tray.button().setTitle_("饭盒 · " + ("待重试" if busy and self.problem else "运行中" if busy else "暂停"))
         if self.quit_pending and not busy:
             self.quit_pending = False
             A.NSApp.replyToApplicationShouldTerminate_(True)
+
+    def toggleFeeding_(self, _):
+        if self.worker.busy:
+            if self.worker.kind in ("feed", "source"):
+                self.stop_(None)
+        else:
+            self.start_(None)
 
     def show_(self, _):
         # Dock/menu activation must not steal focus from a safety confirmation.

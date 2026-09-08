@@ -1,6 +1,13 @@
 <p align="right"><a href="pet-desktop.zh_CN.md">简体中文</a> · <strong>English</strong></p>
 
-# Mac desktop companion 0.2.0
+# Mac desktop companion 0.2.1
+
+The compact header keeps version information in the footer. One main control
+switches between start and pause (or stop during a source check); USB operations
+remain non-cancellable. Connection settings stay readable while locked, and the
+header describes the worker state, never unverified badge connectivity. The
+yellow food tile is the only highlighted metric; delivery times remain clearly
+labelled snapshots. Existing menu-bar start/stop commands are unchanged.
 
 An Apple Silicon macOS 12.3+ pilot with a native Chinese window, menu-bar
 controls and embedded Python 3.12 runtime. Recipients need neither Python, Git,
@@ -35,7 +42,7 @@ package. A clean second Mac and factory badge remain acceptance gates.
 - Approximately one minute after each completed attempt, fetch cumulative local
   usage again. Source errors, missing today's data or Bluetooth failures retry;
   no fabricated zero is sent. Repeated snapshots cannot duplicate food.
-- **Stop feeding** cancels export/discovery/sync and preserves growth. Close the
+- **Pause feeding** (or menu-bar **Stop feeding**) cancels export/discovery/sync and preserves growth. Close the
   window to leave the menu-bar app running. Use the menu to show/start/stop/quit.
   Quitting drains the cancellable worker; ongoing USB checks/writes block quit.
 - Login auto-start is **off by default**. Only the user's explicit checkbox
