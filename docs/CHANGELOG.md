@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+- Add a native Chinese Apple Silicon desktop companion with embedded Python,
+  menu-bar start/stop, cancellable Kaboo export, authenticated delivery status,
+  safe USB installation and explicit opt-in login launch. Disable official
+  settlement in the desktop flow and show un-reconciled archives as local growth
+  records without deleting compatible saves. Include isolated service tests,
+  reproducible build tooling and runtime notices. Ad-hoc signing is not Developer
+  ID signing/notarization; clean-machine and factory-install acceptance remain.
+
 - Add a Chinese macOS pilot installer with explicit backup/write consent,
   strict partition checks, private double-read backups, app-only flashing and
   protected-region readback. Add separate boot/pairing and Kaboo preflight,

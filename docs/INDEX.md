@@ -11,6 +11,7 @@ Use this page to discover repository documentation. `authoritative` documents de
 | [README.md](README.md) | Project overview and capability contract | authoritative |
 | [CHANGELOG.md](CHANGELOG.md) | User-visible behavior, compatibility, and release history | authoritative |
 | [assets/pet-mac-install.md](assets/pet-mac-install.md) | Fork Mac pilot installation, safety and packaging | authoritative |
+| [assets/pet-desktop.md](assets/pet-desktop.md) | Native Mac companion, embedded runtime and acceptance | authoritative |
 | [brand-and-product.md](brand-and-product.md) | Brand, positioning, official links, and product facts | authoritative |
 | [contribution/README.md](contribution/README.md) | Contribution-document index | authoritative |
 | [contribution/doc-conventions.md](contribution/doc-conventions.md) | Documentation language, ownership, safety, and maintenance | authoritative |

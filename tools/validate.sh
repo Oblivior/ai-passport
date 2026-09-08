@@ -78,6 +78,7 @@ run_static_checks() {
     python3 tests/test_digimon_sprites.py
     python3 tests/test_verify_firmware.py
     python3 tests/test_pet_install.py
+    python3 tests/test_pet_desktop.py
     rm -rf "${test_dir}"
     echo "Host tests: PASS"
 }

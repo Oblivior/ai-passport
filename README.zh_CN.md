@@ -2,7 +2,9 @@
 
 # AI Pet Passport：数码宝贝伙伴
 
-本 Fork 消费 Kaboo 本地 CSV 导出，通过 USB 或应用层加密 BLE 给三条主线的像素宠物投食。目前是可玩原型，尚非完整成品。
+Mac 内测使用[桌面补给站](docs/assets/pet-desktop.zh_CN.md)：原生中文 App，内嵌 Python，提供菜单栏、Kaboo 喂养、私有配对及保守 USB 安装。仅 Apple Silicon；Developer ID 签名、公证和干净电脑验收尚未完成。保留[旧版终端向导](docs/assets/pet-mac-install.zh_CN.md)作为备用。
+
+本 Fork 消费 Kaboo 本地 CSV 导出，通过 USB 或应用层加密 BLE 给三条主线的像素宠物投食。本期只用 Kaboo 和本地跨月归档，不依赖官方月结，尚未完成公开发行验收。
 
 ## 怎么玩
 
@@ -130,7 +132,7 @@ HOUSE 仅通过 USB 只读查询版本、当前物种 ID、已领养位图与存
 
 ### 月度归档对账
 
-月度对账：v5 新归档会显示「等待月度对账」。给无线伴侣命令增加 `--settlement-provider /absolute/path/to/provider`，饭盒同步成功后至多每小时检查一次；默认不启用外部连接器。连接器接收一个 `YYYYMM` 参数，输出单个 JSON 对象（下面为合成测试值）：
+月度对账：以下高级协议仅保留兼容，本期 Kaboo 桌面产品不使用。v5 保留内部对账元数据，未对账归档显示「本地成长记录」，已对账的历史状态保留。给无线伴侣命令增加 `--settlement-provider /absolute/path/to/provider`，饭盒同步成功后至多每小时检查一次；默认不启用外部连接器。连接器接收一个 `YYYYMM` 参数，输出单个 JSON 对象（下面为合成测试值）：
 
 ```json
 {"schemaVersion":1,"scope":"personal","month":202608,"complete":true,"tokens":1000,"coveredThrough":"2026-08-31"}

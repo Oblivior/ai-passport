@@ -446,7 +446,7 @@ static void settlement_pages(void)
     snapshot.revision++;
     empty_screen(); enter_pet();
     demo_pet_key(BSP_BTN_UP, BSP_BTN_CLICK); advance(300);
-    assert(has_text(lv_screen_active(), "2026-09  丧尸暴龙兽\n完全体\n等待月度对账  1/1"));
+    assert(has_text(lv_screen_active(), "2026-09  丧尸暴龙兽\n完全体\n本地成长记录  1/1"));
     capture("month-pending");
     assert(pet_house_settle(&snapshot.house, 202609, 30000, 20260930));
     snapshot.revision++; advance(300);

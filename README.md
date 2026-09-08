@@ -2,13 +2,16 @@
 
 # AI Pet Passport: Digimon companions
 
-For small Mac pilots, see the [installation guide](docs/assets/pet-mac-install.md):
-a Chinese terminal wizard handles safe backups, app-only flashing, independent
-pairing and Kaboo checks. It is not dependency-free or a signed App; another
-clean computer remains unverified.
+For Mac pilots, use the [desktop companion](docs/assets/pet-desktop.md): a native
+Chinese App with embedded Python, menu-bar controls, Kaboo feeding, private
+pairing and conservative USB installation. Apple Silicon only; Developer ID
+signing/notarization and clean-machine acceptance remain outstanding. The older
+[terminal wizard](docs/assets/pet-mac-install.md) is retained as a fallback.
 
 This fork consumes local Kaboo CSV exports to feed three lines of pixel pets over
-USB or application-encrypted BLE. It is a playable prototype, not a finished product.
+USB or application-encrypted BLE. This pilot uses Kaboo only, with local monthly
+archives; it does not require an official monthly service. It is not a fully
+accepted public release.
 
 ## Play
 
@@ -300,7 +303,9 @@ local rollover, not official settlement. Offline, the device waits for host time
 
 ### Monthly archive reconciliation
 
-Family records created by v5 start as pending. Configure a trusted local personal
+This optional advanced protocol is retained for compatibility, not used by the
+Kaboo-only desktop product. v5 records retain internal reconciliation metadata
+but display local growth records unless previously settled. Configure a trusted local personal
 statistics adapter with `--settlement-provider /absolute/path/to/provider` on
 `tools/pet_wireless.py --watch`; after lunch sync it checks archived months at most
 hourly. No provider is enabled by default. The executable receives one `YYYYMM`
@@ -330,7 +335,7 @@ quality and does not choose a dark route.
 
 Only archived forms and lifetime discoveries can advance. Lower corrections never
 undo progress, and duplicate receipts do not write flash. The family page shows
-pending/completed status. `SETTLE` runs over trusted USB or the existing authenticated
+local/completed status. `SETTLE` runs over trusted USB or the existing authenticated
 BLE channel, with `PET2 SETTLED month=...` only after persistent commit. It does not
 refresh today's training clock. Test live rollover/late-data behavior separately
 from synthetic host tests; never fast-forward a real pet to simulate a month.

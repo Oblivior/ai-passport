@@ -12,6 +12,7 @@
 | --- | --- | --- | --- |
 | [CHANGELOG.zh_CN.md](./CHANGELOG.zh_CN.md) | 变更记录 | authoritative | 用户可见行为、兼容性与发布流程历史 |
 | [assets/pet-mac-install.zh_CN.md](assets/pet-mac-install.zh_CN.md) | Mac 内测安装 | authoritative | Fork 安装、安全边界与打包流程 |
+| [assets/pet-desktop.zh_CN.md](assets/pet-desktop.zh_CN.md) | Mac 桌面补给站 | authoritative | 原生界面、内嵌运行环境和验收边界 |
 | [brand-and-product.zh_CN.md](./brand-and-product.zh_CN.md) | 品牌与产品说明 | authoritative | 品牌与产品定位、官方入口、开源与授权、产品规格引用 |
 | [contribution/README.zh_CN.md](./contribution/README.zh_CN.md) | 协作规范索引 | authoritative | 通用协作规范（文档规范、提交与 PR 约定） |
 | [contribution/doc-conventions.zh_CN.md](./contribution/doc-conventions.zh_CN.md) | 文档规范 | authoritative | 按任务加载上下文、文档职责、写作维护和内容安全 |

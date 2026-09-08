@@ -120,22 +120,28 @@ async def exchange(client, key, challenge, sequence, line, expected):
     raise TimeoutError("no authenticated device ACK; no success reported, retry is safe")
 
 
-async def sync_once(args, key, *, require_current_day=False):
+async def sync_once(args, key, *, require_current_day=False, totals=None, progress=None, quiet=False):
     # Scan the local data before connecting; do not occupy the radio while scanning files.
-    totals = await asyncio.to_thread(c.load_source, args)
+    if totals is None:
+        totals = await asyncio.to_thread(c.load_source, args)
     today = dt.datetime.now(c.ZONE).date()
     if require_current_day and (today not in totals or max(totals) > today):
         raise ValueError("current-day Kaboo snapshot unavailable; no usage sent")
     goal = args.goal or c.choose_goal(totals, today)
+    if progress:
+        progress("discovering")
     client, challenge = await connect_device(key)
     try:
+        if progress:
+            progress("sending")
         state = await exchange(client, key, challenge, 1, "PET2 STATUS", "STATUS")
         if int(state["date"]) // 100 == int(today.strftime("%Y%m")):
             goal = int(state["goal"])
             if args.goal and args.goal != goal:
                 raise ValueError("monthly goal is locked; no sync sent")
         result = await exchange(client, key, challenge, 2, c.make_snapshot(totals, today, goal), "ACK")
-        print(json.dumps({"source": "kaboo-local", "transport": "ble-aes256gcm", "device": result}), flush=True)
+        if not quiet:
+            print(json.dumps({"source": "kaboo-local", "transport": "ble-aes256gcm", "device": result}), flush=True)
         return result
     finally:
         await client.disconnect()
