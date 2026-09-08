@@ -65,6 +65,17 @@ class WirelessTests(unittest.TestCase):
 
 
 class ExchangeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_installer_rejects_missing_current_day_before_radio(self):
+        from types import SimpleNamespace
+        import datetime as dt
+        today = dt.datetime.now(w.c.ZONE).date()
+        for totals in ({}, {today - dt.timedelta(days=1): 1}, {today: 1, today + dt.timedelta(days=1): 1}):
+            with patch.object(w.c, "load_source", return_value=totals), \
+                    patch.object(w, "connect_device", AsyncMock()) as connect:
+                with self.assertRaisesRegex(ValueError, "current-day"):
+                    await w.sync_once(SimpleNamespace(), bytes(32), require_current_day=True)
+                connect.assert_not_called()
+
     async def test_monthly_retry_is_throttled_without_stopping_lunch(self):
         import pet_settlement as s
         from types import SimpleNamespace

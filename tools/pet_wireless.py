@@ -120,10 +120,12 @@ async def exchange(client, key, challenge, sequence, line, expected):
     raise TimeoutError("no authenticated device ACK; no success reported, retry is safe")
 
 
-async def sync_once(args, key):
+async def sync_once(args, key, *, require_current_day=False):
     # Scan the local data before connecting; do not occupy the radio while scanning files.
     totals = await asyncio.to_thread(c.load_source, args)
     today = dt.datetime.now(c.ZONE).date()
+    if require_current_day and (today not in totals or max(totals) > today):
+        raise ValueError("current-day Kaboo snapshot unavailable; no usage sent")
     goal = args.goal or c.choose_goal(totals, today)
     client, challenge = await connect_device(key)
     try:

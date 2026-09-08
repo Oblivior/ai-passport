@@ -2,6 +2,11 @@
 
 # AI Pet Passport: Digimon companions
 
+For small Mac pilots, see the [installation guide](docs/assets/pet-mac-install.md):
+a Chinese terminal wizard handles safe backups, app-only flashing, independent
+pairing and Kaboo checks. It is not dependency-free or a signed App; another
+clean computer remains unverified.
+
 This fork consumes local Kaboo CSV exports to feed three lines of pixel pets over
 USB or application-encrypted BLE. It is a playable prototype, not a finished product.
 
@@ -357,8 +362,9 @@ and radio-enabled memory require separate device checks.
 ROUTE is read-only and returns `route`, `locked` and `stage`; route IDs are
 0=CORE (unformed), 1=ARMOR, 2=WILD, 3=EXPLORER. Existing STATUS/SYNC fields stay unchanged.
 
-Remaining: real calendar rollover/late-settlement acceptance, certified feature-based routes, independent Flux
-adapter, additional branch routes, two-badge encounter acceptance, sound and production sprite artwork.
+Daily feeding uses Kaboo; a separate Flux adapter is out of scope.
+Remaining: real calendar rollover/late-settlement acceptance, certified feature-based routes,
+additional branch routes, two-badge encounter acceptance, sound and production sprite artwork.
 Physical power-loss tests, battery endurance and a three-day human playtest are
 separate acceptance steps; host simulations do not prove those outcomes.
 Concurrent Wi-Fi scans and the 96 KB recording demo with the persistent radio

@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- Add a Chinese macOS pilot installer with explicit backup/write consent,
+  strict partition checks, private double-read backups, app-only flashing and
+  protected-region readback. Add separate boot/pairing and Kaboo preflight,
+  per-device key profiles, a single-instance wizard and whitelist ZIP packaging.
+  No bundled private exporter, official-monthly provider or autostart service;
+  retain Python setup and clean-machine acceptance as explicit pilot limits.
+
 - Add non-regressing monthly archive reconciliation through a trusted local
   personal-data provider. Freeze the original goal, care days, branch and shared
   allocation denominator; never credit current food or invent care days. Persist
